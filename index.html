@@ -5,24 +5,106 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="PullScope is a zero-backend AI PR review workbench for public GitHub pull requests."
+      content="PullScope is a client-side AI PR review workbench for GitHub Pull Requests with local risk analysis and BYOK OpenAI-compatible models."
+    />
+    <meta
+      name="keywords"
+      content="PullScope, GitHub, pull request, code review, risk analysis, AI review, BYOK, OpenAI-compatible"
     />
     <meta name="theme-color" content="#07080d" />
+    <meta name="robots" content="index,follow" />
     <link rel="canonical" href="https://yudin-s.github.io/pullscope/" />
-    <meta property="og:title" content="PullScope" />
+    <title>PullScope — client-side AI PR review for GitHub</title>
+
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.svg" />
+    <link rel="mask-icon" href="./favicon.svg" color="#6d5dfc" />
+
+    <meta
+      name="og:site_name"
+      property="og:site_name"
+      content="PullScope"
+    />
+    <meta
+      property="og:title"
+      content="PullScope — Client-side AI PR Review for GitHub"
+    />
     <meta
       property="og:description"
-      content="Zero-backend AI PR review for public GitHub pull requests."
+      content="Review public GitHub PRs with local deterministic risk analysis and optional model review from your own endpoint. Your token stays browser-only."
     />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://yudin-s.github.io/pullscope/" />
-    <meta name="twitter:card" content="summary" />
-    <meta name="twitter:title" content="PullScope" />
+    <meta
+      property="og:image"
+      content="https://yudin-s.github.io/pullscope/og-image.png"
+    />
+    <meta property="og:image:alt" content="PullScope interface preview" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:type"
+      content="image/png"
+    />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta
+      name="twitter:title"
+      content="PullScope — Client-side AI PR Review for GitHub"
+    />
     <meta
       name="twitter:description"
-      content="Zero-backend AI PR review for public GitHub pull requests."
+      content="PullScope combines local PR risk analysis with optional AI review through your own OpenAI-compatible endpoint."
     />
-    <title>PullScope</title>
+    <meta
+      name="twitter:image"
+      content="https://yudin-s.github.io/pullscope/og-image.png"
+    />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "SoftwareApplication",
+            "@id": "https://yudin-s.github.io/pullscope/#software",
+            "name": "PullScope",
+            "description": "Client-side AI PR review workbench for GitHub pull requests with local deterministic risk analysis.",
+            "applicationCategory": "DeveloperApplication",
+            "operatingSystem": "Web",
+            "url": "https://yudin-s.github.io/pullscope/",
+            "sameAs": "https://github.com/yudin-s/pullscope",
+            "author": {
+              "@type": "Organization",
+              "name": "PullScope"
+            },
+            "featureList": [
+              "GitHub public PR parsing",
+              "Local risk score and persona notes",
+              "Optional BYOK OpenAI-compatible model review",
+              "Browser-only CORS diagnostics",
+              "Copyable Codex review brief"
+            ]
+          },
+          {
+            "@type": "WebApplication",
+            "@id": "https://yudin-s.github.io/pullscope/#webapp",
+            "name": "PullScope",
+            "applicationCategory": "DeveloperApplication",
+            "description": "Static, client-side dashboard for reviewing GitHub PRs with optional browser-side model calls.",
+            "url": "https://yudin-s.github.io/pullscope/",
+            "browserRequirements": "Requires a modern browser and JavaScript.",
+            "isAccessibleForFree": true,
+            "offers": {
+              "@type": "Offer",
+              "price": "0",
+              "priceCurrency": "USD",
+              "availability": "https://schema.org/InStock"
+            }
+          }
+        ]
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
