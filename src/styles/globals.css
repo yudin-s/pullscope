@@ -1,0 +1,60 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  background: #07080d;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background: linear-gradient(135deg, #07080d 0%, #0b0f1a 46%, #101621 100%);
+  color: #f8fafc;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+::selection {
+  background: rgba(49, 212, 255, 0.28);
+}
+
+.noise {
+  background-image: linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 42px 42px;
+}
+
+.field {
+  width: 100%;
+  border-radius: 0.5rem;
+  border: 1px solid rgb(255 255 255 / 0.1);
+  background: #07080d;
+  padding: 0.75rem;
+  color: white;
+  outline: none;
+  transition: border-color 160ms ease;
+}
+
+.field:focus {
+  border-color: #31d4ff;
+}

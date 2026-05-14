@@ -1,0 +1,256 @@
+import {
+  ProviderSelection,
+  ProviderId,
+  getProviderPreset,
+  resolveProviderConfig,
+} from "./providers";
+import { diagnoseCors } from "./corsDoctor";
+
+export interface ChatMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
+export interface OpenAICompatibleOptions {
+  provider: ProviderSelection;
+  messages: ChatMessage[];
+  model?: string;
+  temperature?: number;
+  maxTokens?: number;
+  timeoutMs?: number;
+  signal?: AbortSignal;
+  responseFormat?: "text" | "json_object";
+}
+
+export type EndpointUsed = "responses" | "chat_completions";
+
+export interface OpenAICompatibleResponse<T = unknown> {
+  text: string;
+  endpointUsed: EndpointUsed;
+  status: number;
+  raw: unknown;
+  data?: T;
+}
+
+interface RawResponsesBody {
+  output?: Array<{
+    type?: string;
+    content?: Array<{ type?: string; text?: string }>;
+  }>;
+  output_text?: string;
+}
+
+function safeParseJSON<T>(input: string): T | undefined {
+  try {
+    return JSON.parse(input) as T;
+  } catch {
+    return undefined;
+  }
+}
+
+interface RawChatBody {
+  choices?: Array<{ message?: { content?: string } }>;
+}
+
+function normalizeResponsesPayload(
+  model: string,
+  messages: ChatMessage[],
+  responseFormat?: "text" | "json_object"
+) {
+  const body = {
+    model,
+    input: messages.map((message) => ({ role: message.role, content: message.content })),
+    stream: false,
+    ...(responseFormat === "json_object"
+      ? {
+          response_format: { type: "json_object" },
+        }
+      : {}),
+  };
+  return body;
+}
+
+function extractTextFromResponses(raw: RawResponsesBody): string {
+  if (raw.output_text) return raw.output_text;
+  if (Array.isArray(raw.output)) {
+    for (const item of raw.output) {
+      const c = item?.content;
+      if (!Array.isArray(c)) continue;
+      for (const part of c) {
+        if (typeof part?.text === "string") {
+          return part.text;
+        }
+      }
+    }
+  }
+  return "";
+}
+
+function extractTextFromChat(raw: RawChatBody): string {
+  const first = raw.choices?.[0];
+  const content = first?.message?.content;
+  return typeof content === "string" ? content : "";
+}
+
+async function readJsonOrText(response: Response): Promise<unknown> {
+  const text = await response.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { rawText: text };
+  }
+}
+
+async function fetchWithTimeout(
+  input: string,
+  init: RequestInit,
+  timeoutMs?: number
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = timeoutMs
+    ? window.setTimeout(() => controller.abort(), timeoutMs)
+    : null;
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: init.signal || controller.signal,
+    });
+  } finally {
+    if (timeoutId) window.clearTimeout(timeoutId);
+  }
+}
+
+function createCorsHint(error: unknown, providerId: ProviderId, endpoint: string) {
+  return diagnoseCors(error, providerId, endpoint);
+}
+
+export async function callOpenAICompatible<T = unknown>(
+  opts: OpenAICompatibleOptions
+): Promise<OpenAICompatibleResponse<T>> {
+  const preset = getProviderPreset(opts.provider.id);
+  const config = resolveProviderConfig(opts.provider);
+  const model = opts.model || config.model;
+  const temperature = opts.temperature ?? 0.2;
+  const maxTokens = opts.maxTokens;
+  const signal = opts.signal;
+
+  const endpoint = `${config.baseUrl}${preset.responsesPath}`;
+  const shouldPreferResponses =
+    config.endpointMode === "responses" ||
+    (config.endpointMode === "auto" && preset.supportsResponses);
+  const forceChatCompletions = config.endpointMode === "chat_completions";
+  const headers = config.headers;
+  const responsePayload = normalizeResponsesPayload(
+    model,
+    opts.messages,
+    opts.responseFormat
+  );
+
+  if (shouldPreferResponses && !forceChatCompletions) {
+    try {
+      const response = await fetchWithTimeout(
+        endpoint,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            ...responsePayload,
+            temperature,
+            ...(maxTokens ? { max_output_tokens: maxTokens } : {}),
+          }),
+          signal,
+        },
+        opts.timeoutMs
+      );
+
+      const raw = (await readJsonOrText(response)) as Record<string, unknown>;
+      if (response.status < 500 && response.ok) {
+        const text = extractTextFromResponses(raw as RawResponsesBody);
+        return {
+          text,
+          endpointUsed: "responses",
+          status: response.status,
+          raw,
+          data:
+            opts.responseFormat === "json_object"
+              ? (safeParseJSON<T>(text) as T | undefined)
+              : undefined,
+        };
+      }
+
+      if (response.status !== 404 && response.status !== 405) {
+        throw new Error(`Responses endpoint error: ${response.status}`);
+      }
+    } catch (error) {
+      const diag = createCorsHint(error, preset.id, endpoint);
+      if (!diag.isCorsLikely) {
+        throw error;
+      }
+      throw new Error(
+        `Responses endpoint unavailable or blocked (possible CORS): ${
+          String((error as Error)?.message ?? error)
+        }`
+      );
+    }
+  }
+
+  const chatEndpoint = `${config.baseUrl}${preset.chatCompletionsPath}`;
+  const chatResponse = await fetchWithTimeout(
+    chatEndpoint,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        model,
+        messages: opts.messages,
+        temperature,
+        ...(maxTokens ? { max_tokens: maxTokens } : {}),
+        ...(opts.responseFormat === "json_object"
+          ? { response_format: { type: "json_object" } }
+          : {}),
+      }),
+      signal,
+    },
+    opts.timeoutMs
+  );
+
+  const rawChat = (await readJsonOrText(chatResponse)) as Record<string, unknown>;
+  if (!chatResponse.ok) {
+    const message =
+      typeof rawChat.error === "object" && rawChat.error && "message" in rawChat.error
+        ? String((rawChat.error as { message?: unknown }).message)
+        : `Chat Completions endpoint error: ${chatResponse.status}`;
+    throw new Error(message);
+  }
+  const text = extractTextFromChat(rawChat as RawChatBody);
+  return {
+    text,
+    endpointUsed: "chat_completions",
+    status: chatResponse.status,
+    raw: rawChat,
+    data:
+      opts.responseFormat === "json_object"
+        ? (safeParseJSON<T>(text) as T | undefined)
+        : undefined,
+  };
+}
+
+export async function pingProvider(
+  provider: ProviderSelection
+): Promise<boolean> {
+  const preset = getProviderPreset(provider.id);
+  const config = resolveProviderConfig(provider);
+  const headers = config.headers;
+  const probeUrl = `${config.baseUrl}${preset.chatCompletionsPath}`;
+
+  try {
+    const response = await fetch(probeUrl, {
+      method: "OPTIONS",
+      headers,
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
