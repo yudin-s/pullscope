@@ -72,6 +72,13 @@ interface AiReviewShape {
   mergeRecommendation?: string;
 }
 
+interface AiReviewResult {
+  parsed?: AiReviewShape;
+  raw: string;
+  endpoint?: string;
+  parsedOk: boolean;
+}
+
 interface DiagnosticRow {
   label: string;
   status: "pass" | "warn" | "fail" | "pending";
@@ -408,12 +415,7 @@ export function App() {
   const [aiRunning, setAiRunning] = useState(false);
   const [aiError, setAiError] = useState("");
   const [aiErrorOpen, setAiErrorOpen] = useState(false);
-  const [aiReview, setAiReview] = useState<{
-    parsed?: AiReviewShape;
-    raw: string;
-    endpoint?: string;
-    parsedOk: boolean;
-  } | null>(null);
+  const [aiReview, setAiReview] = useState<AiReviewResult | null>(null);
 
   const risk = useMemo(() => runRiskEngine(prData), [prData]);
   const codexBrief = useMemo(() => buildCodexBrief(prData, risk), [prData, risk]);
@@ -1278,63 +1280,17 @@ export function App() {
             {providerWizard}
           </div>
 
-          <Dashboard pr={prData} risk={risk} />
+          <Dashboard
+            pr={prData}
+            risk={risk}
+            aiReview={aiReview}
+            aiError={aiError}
+            onOpenAiError={() => setAiErrorOpen(true)}
+          />
         </div>
       </section>
 
-      <section className="mx-auto grid max-w-7xl gap-6 px-5 pb-12 lg:grid-cols-[1fr_1fr]">
-        <div className="rounded-lg border border-white/10 bg-ink-900/85 p-5">
-          <div className="flex items-center gap-3">
-            <Sparkles className="h-5 w-5 text-signal-cyan" />
-              <h2 className="text-xl font-semibold text-white">Combined review output</h2>
-          </div>
-          {aiError && (
-            <button
-              type="button"
-              onClick={() => setAiErrorOpen(true)}
-              className="mt-5 inline-flex items-center gap-2 rounded-lg border border-signal-rose/30 bg-signal-rose/10 px-3 py-2 text-sm font-semibold text-rose-100 hover:bg-signal-rose/20"
-            >
-              <AlertTriangle className="h-4 w-4" />
-              View AI error details
-            </button>
-          )}
-          {!aiReview && !aiError && (
-            <EmptyState
-              icon={<Bot className="h-5 w-5" />}
-              title="Local review is ready"
-              body="Local deterministic risk is always included; connect a model when you want a combined local+AI verdict."
-            />
-          )}
-          {aiReview && (
-            <div className="mt-5 space-y-4">
-              <div className="rounded-lg border border-white/10 bg-white/[0.04] p-4">
-                <p className="text-sm uppercase text-slate-500">
-                  {aiReview.parsedOk
-                    ? `Combined with local ${risk.overallScore}/100 via ${aiReview.endpoint}`
-                    : "Raw fallback"}
-                </p>
-                <h3 className="mt-2 text-lg font-semibold text-white">
-                  {aiReview.parsed?.summary ?? "Provider returned non-JSON text"}
-                </h3>
-                {aiReview.parsed?.mergeRecommendation && (
-                  <p className="mt-3 text-sm leading-6 text-slate-400">
-                    {aiReview.parsed.mergeRecommendation}
-                  </p>
-                )}
-              </div>
-              <ConcernList title="Local signals used" items={aiReview.parsed?.localSignals} />
-              <ConcernList title="Model findings" items={aiReview.parsed?.aiFindings} />
-              <ConcernList title="Critical findings" items={aiReview.parsed?.criticalFindings ?? aiReview.parsed?.securityConcerns} />
-              <ConcernList title="Recommendations" items={aiReview.parsed?.recommendations ?? aiReview.parsed?.testSuggestions} />
-              {!aiReview.parsedOk && (
-                <pre className="max-h-72 overflow-auto rounded-lg bg-ink-950 p-4 text-xs leading-6 text-slate-300">
-                  {aiReview.raw}
-                </pre>
-              )}
-            </div>
-          )}
-        </div>
-
+      <section className="mx-auto max-w-7xl px-5 pb-12">
         <div id="brief" className="rounded-lg border border-white/10 bg-ink-900/85 p-5">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
@@ -1487,7 +1443,19 @@ function FileHeatmap({ risk }: { risk: RiskAssessment }) {
   );
 }
 
-function Dashboard({ pr, risk }: { pr: PullRequestData; risk: RiskAssessment }) {
+function Dashboard({
+  pr,
+  risk,
+  aiReview,
+  aiError,
+  onOpenAiError,
+}: {
+  pr: PullRequestData;
+  risk: RiskAssessment;
+  aiReview: AiReviewResult | null;
+  aiError: string;
+  onOpenAiError: () => void;
+}) {
   const topFiles = [...risk.perFileScores].sort((a, b) => b.score - a.score).slice(0, 7);
   const activeReasons = risk.reasons.filter((reason) => !reason.label.toLowerCase().startsWith("no "));
 
@@ -1566,6 +1534,85 @@ function Dashboard({ pr, risk }: { pr: PullRequestData; risk: RiskAssessment }) 
           </div>
         </div>
       </div>
+
+      <CombinedReviewPanel
+        risk={risk}
+        aiReview={aiReview}
+        aiError={aiError}
+        onOpenAiError={onOpenAiError}
+      />
+    </div>
+  );
+}
+
+function CombinedReviewPanel({
+  risk,
+  aiReview,
+  aiError,
+  onOpenAiError,
+}: {
+  risk: RiskAssessment;
+  aiReview: AiReviewResult | null;
+  aiError: string;
+  onOpenAiError: () => void;
+}) {
+  return (
+    <div className="mt-6 border-t border-white/10 pt-5">
+      <div className="flex items-center gap-3">
+        <Sparkles className="h-5 w-5 text-signal-cyan" />
+        <h3 className="text-lg font-semibold text-white">Combined review output</h3>
+      </div>
+      {aiError && (
+        <button
+          type="button"
+          onClick={onOpenAiError}
+          className="mt-5 inline-flex items-center gap-2 rounded-lg border border-signal-rose/30 bg-signal-rose/10 px-3 py-2 text-sm font-semibold text-rose-100 hover:bg-signal-rose/20"
+        >
+          <AlertTriangle className="h-4 w-4" />
+          View AI error details
+        </button>
+      )}
+      {!aiReview && !aiError && (
+        <EmptyState
+          icon={<Bot className="h-5 w-5" />}
+          title="Local review is ready"
+          body="Local deterministic risk is always included; connect a model when you want a combined local+AI verdict."
+        />
+      )}
+      {aiReview && (
+        <div className="mt-5 space-y-4">
+          <div className="rounded-lg border border-white/10 bg-white/[0.04] p-4">
+            <p className="text-sm uppercase text-slate-500">
+              {aiReview.parsedOk
+                ? `Combined with local ${risk.overallScore}/100 via ${aiReview.endpoint}`
+                : "Raw fallback"}
+            </p>
+            <h4 className="mt-2 text-lg font-semibold text-white">
+              {aiReview.parsed?.summary ?? "Provider returned non-JSON text"}
+            </h4>
+            {aiReview.parsed?.mergeRecommendation && (
+              <p className="mt-3 text-sm leading-6 text-slate-400">
+                {aiReview.parsed.mergeRecommendation}
+              </p>
+            )}
+          </div>
+          <ConcernList title="Local signals used" items={aiReview.parsed?.localSignals} />
+          <ConcernList title="Model findings" items={aiReview.parsed?.aiFindings} />
+          <ConcernList
+            title="Critical findings"
+            items={aiReview.parsed?.criticalFindings ?? aiReview.parsed?.securityConcerns}
+          />
+          <ConcernList
+            title="Recommendations"
+            items={aiReview.parsed?.recommendations ?? aiReview.parsed?.testSuggestions}
+          />
+          {!aiReview.parsedOk && (
+            <pre className="max-h-72 overflow-auto rounded-lg bg-ink-950 p-4 text-xs leading-6 text-slate-300">
+              {aiReview.raw}
+            </pre>
+          )}
+        </div>
+      )}
     </div>
   );
 }

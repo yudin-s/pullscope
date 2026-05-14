@@ -52,18 +52,59 @@ interface RawChatBody {
   choices?: Array<{ message?: { content?: string } }>;
 }
 
+const reviewJsonSchema = {
+  name: "pullscope_review",
+  schema: {
+    type: "object",
+    additionalProperties: true,
+  },
+  strict: false,
+};
+
+function shouldUseJsonSchema(providerId: ProviderId, forceJsonSchema = false) {
+  return (
+    forceJsonSchema ||
+    providerId === "openai" ||
+    providerId === "openrouter" ||
+    providerId === "groq" ||
+    providerId === "lmstudio"
+  );
+}
+
+function normalizeResponsesInput(messages: ChatMessage[]) {
+  const instructions = messages
+    .filter((message) => message.role === "system")
+    .map((message) => message.content)
+    .join("\n\n");
+  const input =
+    messages
+      .filter((message) => message.role !== "system")
+      .map((message) => `${message.role}: ${message.content}`)
+      .join("\n\n") || instructions;
+
+  return {
+    input,
+    ...(instructions && input !== instructions ? { instructions } : {}),
+  };
+}
+
 function normalizeResponsesPayload(
+  providerId: ProviderId,
   model: string,
   messages: ChatMessage[],
   responseFormat?: "text" | "json_object"
 ) {
   const body = {
     model,
-    input: messages.map((message) => ({ role: message.role, content: message.content })),
+    ...normalizeResponsesInput(messages),
     stream: false,
     ...(responseFormat === "json_object"
       ? {
-          text: { format: { type: "json_object" } },
+          text: {
+            format: shouldUseJsonSchema(providerId)
+              ? { type: "json_schema", ...reviewJsonSchema }
+              : { type: "json_object" },
+          },
         }
       : {}),
   };
@@ -76,18 +117,11 @@ function normalizeChatResponseFormat(
   forceJsonSchema = false
 ) {
   if (responseFormat !== "json_object") return {};
-  if (providerId === "lmstudio" || forceJsonSchema) {
+  if (shouldUseJsonSchema(providerId, forceJsonSchema)) {
     return {
       response_format: {
         type: "json_schema",
-        json_schema: {
-          name: "pullscope_review",
-          schema: {
-            type: "object",
-            additionalProperties: true,
-          },
-          strict: false,
-        },
+        json_schema: reviewJsonSchema,
       },
     };
   }
@@ -183,6 +217,7 @@ export async function callOpenAICompatible<T = unknown>(
   const forceChatCompletions = config.endpointMode === "chat_completions";
   const headers = config.headers;
   const responsePayload = normalizeResponsesPayload(
+    preset.id,
     model,
     opts.messages,
     opts.responseFormat
@@ -220,7 +255,9 @@ export async function callOpenAICompatible<T = unknown>(
         };
       }
 
-      if (response.status !== 404 && response.status !== 405) {
+      const shouldFallbackToChat =
+        config.endpointMode === "auto" && [400, 404, 405, 422].includes(response.status);
+      if (!shouldFallbackToChat) {
         throw new Error(extractProviderError(raw, `Responses endpoint error: ${response.status}`));
       }
     } catch (error) {
