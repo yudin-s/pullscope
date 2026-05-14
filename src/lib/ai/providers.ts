@@ -19,6 +19,7 @@ export interface ProviderPreset {
   chatCompletionsPath: string;
   responsesPath: string;
   modelListPath: string;
+  suggestedModels: string[];
   supportsResponses: boolean;
   auth: ProviderAuth;
   note?: string;
@@ -44,6 +45,7 @@ const providerPresets: ProviderPreset[] = [
     chatCompletionsPath: "/v1/chat/completions",
     responsesPath: "/v1/responses",
     modelListPath: "/v1/models",
+    suggestedModels: ["gpt-4.1-mini", "gpt-4.1", "gpt-4o-mini"],
     supportsResponses: true,
     auth: { needsApiKey: true },
   },
@@ -55,6 +57,11 @@ const providerPresets: ProviderPreset[] = [
     chatCompletionsPath: "/api/v1/chat/completions",
     responsesPath: "/api/v1/responses",
     modelListPath: "/api/v1/models",
+    suggestedModels: [
+      "openai/gpt-4.1-mini",
+      "openai/gpt-4.1",
+      "anthropic/claude-3.5-sonnet",
+    ],
     supportsResponses: false,
     auth: { needsApiKey: true },
     note: "Some models may ignore temperature metadata.",
@@ -67,6 +74,7 @@ const providerPresets: ProviderPreset[] = [
     chatCompletionsPath: "/openai/v1/chat/completions",
     responsesPath: "/openai/v1/responses",
     modelListPath: "/openai/v1/models",
+    suggestedModels: ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
     supportsResponses: false,
     auth: { needsApiKey: true },
   },
@@ -78,6 +86,7 @@ const providerPresets: ProviderPreset[] = [
     chatCompletionsPath: "/v1/chat/completions",
     responsesPath: "/v1/responses",
     modelListPath: "/v1/models",
+    suggestedModels: ["llama3.1", "llama3.2", "mistral", "qwen2.5-coder"],
     supportsResponses: false,
     auth: { needsApiKey: false },
   },
@@ -89,6 +98,7 @@ const providerPresets: ProviderPreset[] = [
     chatCompletionsPath: "/v1/chat/completions",
     responsesPath: "/v1/responses",
     modelListPath: "/v1/models",
+    suggestedModels: ["local-model"],
     supportsResponses: false,
     auth: { needsApiKey: false },
   },
@@ -100,6 +110,7 @@ const providerPresets: ProviderPreset[] = [
     chatCompletionsPath: "/v1/chat/completions",
     responsesPath: "/v1/responses",
     modelListPath: "/v1/models",
+    suggestedModels: ["local"],
     supportsResponses: true,
     auth: { needsApiKey: true },
   },

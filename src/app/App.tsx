@@ -16,6 +16,7 @@ import {
   Lock,
   Network,
   Radar,
+  RefreshCw,
   ShieldCheck,
   Sparkles,
   Wand2,
@@ -50,8 +51,11 @@ import {
 type LoadState = "idle" | "loading" | "error";
 
 interface AiReviewShape {
+  combinedRiskScore?: number;
   overallRiskScore?: number;
   summary?: string;
+  localSignals?: string[];
+  aiFindings?: string[];
   criticalFindings?: string[];
   recommendations?: string[];
   securityConcerns?: string[];
@@ -64,6 +68,7 @@ interface AiReviewShape {
     comment?: string;
   }>;
   codexPrompt?: string;
+  mergeRecommendation?: string;
 }
 
 interface DiagnosticRow {
@@ -192,11 +197,17 @@ function validateAiReviewShape(value: unknown): value is AiReviewShape {
   const review = value as AiReviewShape;
   const hasSummary = typeof review.summary === "string" && review.summary.trim().length > 0;
   const hasScore =
-    typeof review.overallRiskScore === "number" &&
-    Number.isFinite(review.overallRiskScore) &&
-    review.overallRiskScore >= 0 &&
-    review.overallRiskScore <= 100;
+    (typeof review.combinedRiskScore === "number" &&
+      Number.isFinite(review.combinedRiskScore) &&
+      review.combinedRiskScore >= 0 &&
+      review.combinedRiskScore <= 100) ||
+    (typeof review.overallRiskScore === "number" &&
+      Number.isFinite(review.overallRiskScore) &&
+      review.overallRiskScore >= 0 &&
+      review.overallRiskScore <= 100);
   const hasKnownList =
+    isStringArray(review.localSignals) ||
+    isStringArray(review.aiFindings) ||
     isStringArray(review.criticalFindings) ||
     isStringArray(review.recommendations) ||
     isStringArray(review.securityConcerns) ||
@@ -206,11 +217,50 @@ function validateAiReviewShape(value: unknown): value is AiReviewShape {
   return hasSummary && (hasScore || hasKnownList);
 }
 
+function extractModelIds(raw: unknown): string[] {
+  const source = raw as {
+    data?: Array<{ id?: unknown; name?: unknown; model?: unknown }>;
+    models?: Array<string | { id?: unknown; name?: unknown; model?: unknown }>;
+  };
+  const candidates = Array.isArray(source.data)
+    ? source.data
+    : Array.isArray(source.models)
+      ? source.models
+      : [];
+  const ids = candidates
+    .map((item) => {
+      if (typeof item === "string") return item;
+      return item.id ?? item.name ?? item.model;
+    })
+    .filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+  return [...new Set(ids)].sort((a, b) => a.localeCompare(b));
+}
+
+function providerErrorMessage(raw: unknown, fallback: string): string {
+  const body = raw as { error?: { message?: unknown }; message?: unknown };
+  if (typeof body?.error?.message === "string") return body.error.message;
+  if (typeof body?.message === "string") return body.message;
+  return fallback;
+}
+
 function StatusIcon({ status }: { status: DiagnosticRow["status"] }) {
   if (status === "pass") return <CheckCircle2 className="h-4 w-4 text-signal-lime" />;
   if (status === "fail") return <XCircle className="h-4 w-4 text-signal-rose" />;
   if (status === "warn") return <AlertTriangle className="h-4 w-4 text-signal-amber" />;
   return <Loader2 className="h-4 w-4 animate-spin text-signal-cyan" />;
+}
+
+function HelpTooltip({ label }: { label: string }) {
+  return (
+    <span className="group relative inline-flex">
+      <span className="flex h-5 w-5 items-center justify-center rounded-full border border-white/20 bg-white/[0.04] text-xs font-semibold text-slate-300">
+        ?
+      </span>
+      <span className="pointer-events-none absolute left-1/2 top-7 z-20 hidden w-72 -translate-x-1/2 rounded-lg border border-white/10 bg-ink-950 p-3 text-xs leading-5 text-slate-300 shadow-glow group-hover:block group-focus-within:block">
+        {label}
+      </span>
+    </span>
+  );
 }
 
 export function App() {
@@ -221,11 +271,15 @@ export function App() {
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState("");
+  const [githubToken, setGithubToken] = useState("");
 
   const [providerId, setProviderId] = useState<ProviderId>("openai");
   const selectedPreset = getProviderPreset(providerId);
   const [baseUrl, setBaseUrl] = useState(selectedPreset.defaultBaseUrl);
   const [model, setModel] = useState(selectedPreset.defaultModel);
+  const [fetchedModels, setFetchedModels] = useState<string[]>([]);
+  const [modelLoadState, setModelLoadState] = useState<LoadState>("idle");
+  const [modelLoadMessage, setModelLoadMessage] = useState("");
   const [endpointMode, setEndpointMode] = useState<EndpointMode>("auto");
   const [apiKey, setApiKey] = useState("");
   const [profileStorage, setProfileStorage] = useState<StorageScope>("memory");
@@ -243,6 +297,15 @@ export function App() {
 
   const risk = useMemo(() => runRiskEngine(prData), [prData]);
   const codexBrief = useMemo(() => buildCodexBrief(prData, risk), [prData, risk]);
+  const modelOptions = useMemo(() => {
+    const options = [
+      ...fetchedModels,
+      ...selectedPreset.suggestedModels,
+      selectedPreset.defaultModel,
+      model,
+    ].filter(Boolean);
+    return [...new Set(options)].slice(0, 60);
+  }, [fetchedModels, model, selectedPreset]);
 
   useEffect(() => {
     const consent = { allowSessionStorage: true, allowLocalStorage: true };
@@ -265,6 +328,9 @@ export function App() {
     setProviderId(nextId);
     setBaseUrl(nextPreset.defaultBaseUrl);
     setModel(nextPreset.defaultModel);
+    setFetchedModels([]);
+    setModelLoadState("idle");
+    setModelLoadMessage("");
     setEndpointMode("auto");
     setApiKey("");
     setProviderApiKeyInMemory(nextId, undefined);
@@ -317,7 +383,9 @@ export function App() {
     setAiReview(null);
     setAiError("");
     try {
-      const data = await fetchPrData(prUrl.trim());
+      const data = await fetchPrData(prUrl.trim(), {
+        githubToken: githubToken || undefined,
+      });
       setPrData(data);
       setLoadState("idle");
     } catch (err) {
@@ -483,12 +551,48 @@ export function App() {
     setDoctorRunning(false);
   }
 
+  async function refreshModelList() {
+    setModelLoadState("loading");
+    setModelLoadMessage("Checking model list endpoint.");
+    const authReady = Boolean(apiKey || !selectedPreset.auth.needsApiKey);
+    if (!authReady) {
+      setModelLoadState("error");
+      setModelLoadMessage("Add an API key to fetch models for this provider.");
+      return;
+    }
+
+    try {
+      const provider = currentProvider();
+      const endpoint = `${baseUrl.replace(/\/$/, "")}${selectedPreset.modelListPath}`;
+      const response = await fetch(endpoint, {
+        method: "GET",
+        headers: buildProviderHeaders(provider),
+      });
+      const raw = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(
+          providerErrorMessage(raw, `Model list request failed: ${response.status}`)
+        );
+      }
+      const models = extractModelIds(raw);
+      if (models.length === 0) {
+        throw new Error("The provider responded, but no model ids were found.");
+      }
+      setFetchedModels(models);
+      setModelLoadState("idle");
+      setModelLoadMessage(`Loaded ${models.length} models from ${selectedPreset.name}.`);
+    } catch (err) {
+      setModelLoadState("error");
+      setModelLoadMessage(String((err as Error)?.message ?? err));
+    }
+  }
+
   async function runAiReview() {
     setAiRunning(true);
     setAiError("");
     setAiReview(null);
     try {
-      const prompt = buildRiskPrompt(prData, {
+      const prompt = buildRiskPrompt(prData, risk, {
         maxFiles: 12,
         maxPatchCharsPerFile: 420,
         includePersonaNotes: true,
@@ -499,7 +603,7 @@ export function App() {
           {
             role: "system",
             content:
-              "You are a senior PR reviewer. Return compact JSON only. Never include markdown fences.",
+              "You are a senior PR reviewer. Combine local deterministic risk with model reasoning. Return compact JSON only. Never include markdown fences.",
           },
           { role: "user", content: prompt },
         ],
@@ -580,7 +684,7 @@ export function App() {
           </h1>
           <p className="mt-5 max-w-2xl text-xl leading-8 text-slate-300">
             Client-side AI PR review with your own model endpoint. Paste a public pull request,
-            get local risk signals instantly, then optionally run a browser-only AI review.
+            get local risk signals instantly, then combine them with a browser-only AI review.
           </p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <a
@@ -601,7 +705,7 @@ export function App() {
           <div className="mt-9 grid gap-3 sm:grid-cols-3">
             {[
               ["No backend", "Static deploy, no proxy, no server secrets."],
-              ["Works without AI", "Rules-based risk engine runs locally."],
+              ["Local first", "Rules-based risk engine always runs before AI."],
               ["BYOK models", "OpenAI-compatible endpoint from your browser."],
             ].map(([title, body]) => (
               <div key={title} className="rounded-lg border border-white/10 bg-white/[0.04] p-4">
@@ -683,6 +787,18 @@ export function App() {
                 placeholder={samplePrUrl}
                 className="w-full rounded-lg border border-white/10 bg-ink-950 px-3 py-3 text-sm text-white outline-none transition focus:border-signal-cyan"
               />
+              <label className="flex items-center gap-2 text-sm font-medium text-slate-300" htmlFor="github-token">
+                GitHub token for private PRs
+                <HelpTooltip label="This token is optional and memory-only. PullScope sends it directly from your browser to api.github.com for PR reads, never stores it in profile storage, and has no backend that can receive it." />
+              </label>
+              <input
+                id="github-token"
+                type="password"
+                value={githubToken}
+                onChange={(event) => setGithubToken(event.target.value)}
+                placeholder="Optional memory-only fine-grained token"
+                className="w-full rounded-lg border border-white/10 bg-ink-950 px-3 py-3 text-sm text-white outline-none transition focus:border-signal-cyan"
+              />
               <div className="grid gap-3 sm:grid-cols-2">
                 <button
                   type="submit"
@@ -721,8 +837,9 @@ export function App() {
               </div>
               <p className="mt-3 text-sm leading-6 text-slate-400">
                 PullScope runs entirely in your browser. Your model key is sent directly from your
-                browser to the endpoint you configure. PullScope has no backend and cannot store
-                your key on a server. Use temporary, restricted, or low-limit API keys.
+                browser to the endpoint you configure. An optional GitHub token is sent directly to
+                api.github.com for private PR reads. PullScope has no backend and cannot store
+                these keys on a server. Use temporary, read-only, restricted, or low-limit tokens.
               </p>
             </div>
           </div>
@@ -767,11 +884,59 @@ export function App() {
                 />
               </Field>
               <Field label="Model">
-                <input
-                  value={model}
-                  onChange={(event) => setModel(event.target.value)}
-                  className="field"
-                />
+                <div className="space-y-2">
+                  <input
+                    value={model}
+                    onChange={(event) => setModel(event.target.value)}
+                    list="model-options"
+                    className="field"
+                  />
+                  <datalist id="model-options">
+                    {modelOptions.map((item) => (
+                      <option key={item} value={item} />
+                    ))}
+                  </datalist>
+                  <div className="flex flex-wrap gap-2">
+                    {modelOptions.slice(0, 5).map((item) => (
+                      <button
+                        key={item}
+                        type="button"
+                        onClick={() => setModel(item)}
+                        className={clsx(
+                          "rounded-lg border px-2 py-1 text-xs transition",
+                          item === model
+                            ? "border-signal-cyan bg-signal-cyan/10 text-white"
+                            : "border-white/10 bg-white/[0.03] text-slate-400 hover:bg-white/10",
+                        )}
+                      >
+                        {item}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={refreshModelList}
+                    disabled={modelLoadState === "loading"}
+                    className="inline-flex items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-xs font-semibold text-white hover:bg-white/10 disabled:opacity-60"
+                  >
+                    {modelLoadState === "loading" ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-3.5 w-3.5" />
+                    )}
+                    Refresh models
+                  </button>
+                  {modelLoadMessage && (
+                    <p
+                      className={clsx(
+                        "text-xs leading-5",
+                        modelLoadState === "error" ? "text-signal-amber" : "text-slate-500",
+                      )}
+                    >
+                      {modelLoadMessage}
+                    </p>
+                  )}
+                </div>
               </Field>
               <Field label="Endpoint mode">
                 <select
@@ -784,7 +949,14 @@ export function App() {
                   <option value="chat_completions">Chat Completions</option>
                 </select>
               </Field>
-              <Field label="API key">
+              <Field
+                label={
+                  <span className="inline-flex items-center gap-2">
+                    API key
+                    <HelpTooltip label="Model API keys stay in this browser tab's memory. PullScope sends the key directly to the endpoint you configure, never stores it in session/local profile storage, and has no server-side secret store." />
+                  </span>
+                }
+              >
                 <input
                   type="password"
                   value={apiKey}
@@ -832,7 +1004,7 @@ export function App() {
                 className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/15 px-4 py-3 font-semibold text-white hover:bg-white/10 disabled:opacity-60"
               >
                 {aiRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
-                Run AI review
+                Run combined review
               </button>
             </div>
           </div>
@@ -874,7 +1046,7 @@ export function App() {
         <div className="rounded-lg border border-white/10 bg-ink-900/85 p-5">
           <div className="flex items-center gap-3">
             <Sparkles className="h-5 w-5 text-signal-cyan" />
-            <h2 className="text-xl font-semibold text-white">AI review output</h2>
+              <h2 className="text-xl font-semibold text-white">Combined review output</h2>
           </div>
           {aiError && (
             <div className="mt-5 rounded-lg border border-signal-rose/30 bg-signal-rose/10 p-3 text-sm text-rose-100">
@@ -885,19 +1057,28 @@ export function App() {
             <EmptyState
               icon={<Bot className="h-5 w-5" />}
               title="Local review is ready"
-              body="AI is optional; connect a compatible endpoint when you want model feedback."
+              body="Local deterministic risk is always included; connect a model when you want a combined local+AI verdict."
             />
           )}
           {aiReview && (
             <div className="mt-5 space-y-4">
               <div className="rounded-lg border border-white/10 bg-white/[0.04] p-4">
                 <p className="text-sm uppercase text-slate-500">
-                  {aiReview.parsedOk ? `Parsed JSON via ${aiReview.endpoint}` : "Raw fallback"}
+                  {aiReview.parsedOk
+                    ? `Combined with local ${risk.overallScore}/100 via ${aiReview.endpoint}`
+                    : "Raw fallback"}
                 </p>
                 <h3 className="mt-2 text-lg font-semibold text-white">
                   {aiReview.parsed?.summary ?? "Provider returned non-JSON text"}
                 </h3>
+                {aiReview.parsed?.mergeRecommendation && (
+                  <p className="mt-3 text-sm leading-6 text-slate-400">
+                    {aiReview.parsed.mergeRecommendation}
+                  </p>
+                )}
               </div>
+              <ConcernList title="Local signals used" items={aiReview.parsed?.localSignals} />
+              <ConcernList title="Model findings" items={aiReview.parsed?.aiFindings} />
               <ConcernList title="Critical findings" items={aiReview.parsed?.criticalFindings ?? aiReview.parsed?.securityConcerns} />
               <ConcernList title="Recommendations" items={aiReview.parsed?.recommendations ?? aiReview.parsed?.testSuggestions} />
               {!aiReview.parsedOk && (
@@ -940,7 +1121,7 @@ export function App() {
           <div>
             <p className="font-semibold text-white">PullScope is built for public launch.</p>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
-              Static frontend, public GitHub API, local risk analysis, optional BYOK AI, and a
+              Static frontend, public GitHub API, local risk analysis, combined BYOK AI, and a
               security-aware UX that demonstrates product engineering without server-side secrets.
             </p>
           </div>
@@ -1081,7 +1262,7 @@ function Dashboard({ pr, risk }: { pr: PullRequestData; risk: RiskAssessment }) 
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
   return (
     <label className="block">
       <span className="mb-2 block text-sm font-medium text-slate-300">{label}</span>

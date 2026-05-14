@@ -4,7 +4,7 @@ Client-side AI PR review with your own model endpoint.
 
 [Live demo](https://yudin-s.github.io/pullscope/) · [Source](https://github.com/yudin-s/pullscope)
 
-PullScope is a zero-backend workbench for reviewing public GitHub pull requests. Paste a PR URL, inspect deterministic local risk signals, and optionally run an AI review directly from your browser against an OpenAI-compatible endpoint.
+PullScope is a zero-backend workbench for reviewing public GitHub pull requests. Paste a PR URL, inspect deterministic local risk signals, and optionally combine them with an AI review directly from your browser against an OpenAI-compatible endpoint.
 
 It is designed as a portfolio-grade open-source devtool: useful without login, static-hostable on GitHub Pages, security-aware, and polished enough to show real product engineering.
 
@@ -17,8 +17,10 @@ It is designed as a portfolio-grade open-source devtool: useful without login, s
 - Shows reviewer persona notes for security, reliability, maintainability, and DX.
 - Includes demo data for rate-limit or offline demos.
 - Provides BYOK provider setup for OpenAI-compatible model endpoints.
+- Supports model switching through provider suggestions and browser-side `/models` refresh where CORS allows it.
 - Lets you choose automatic, Responses API, or Chat Completions endpoint routing.
 - Runs browser-side CORS diagnostics across model-list, Responses, Chat, and minimal completion probes.
+- Combines deterministic local risk with optional AI review output.
 - Generates a Codex-ready Markdown review brief.
 
 ## Zero-Backend Architecture
@@ -35,15 +37,19 @@ There is:
 - no GitHub writeback
 - no committed API key
 
-All GitHub reads use public unauthenticated REST endpoints. All model calls, when enabled, are sent directly from the user's browser to the endpoint they configure.
+GitHub reads use public unauthenticated REST endpoints by default. For private repositories, users can paste a fine-grained GitHub token with read-only repository access; that token is sent directly from the browser to `api.github.com` and is not stored by PullScope. All model calls, when enabled, are sent directly from the user's browser to the endpoint they configure.
 
 ## Security And Key Handling
 
 PullScope runs entirely in your browser. Your model key is sent directly from your browser to the endpoint you configure. PullScope has no backend and cannot store your key on a server.
 
-Memory-only mode is the default and recommended behavior. Use temporary, restricted, or low-limit API keys. Optional session or local profile saving is an advanced opt-in and stores only provider, model, base URL, and endpoint mode. API keys remain memory-only.
+Memory-only mode is the default and recommended behavior. Use temporary, restricted, low-limit, read-only tokens. Optional session or local profile saving is an advanced opt-in and stores only provider, model, base URL, and endpoint mode. API keys and GitHub tokens remain memory-only.
 
 Because this is a browser-only app, CORS matters. If a provider does not allow requests from the current origin, PullScope cannot bypass that policy without adding a backend or proxy, which is intentionally outside the MVP architecture.
+
+## Private Repository Access
+
+PullScope can analyze private GitHub PRs when the user provides a fine-grained GitHub token with read-only access to the target repository. The token is used only for browser-side GitHub REST calls and is cleared on refresh. A full browser-only OAuth flow would require a registered GitHub OAuth/GitHub App flow and is intentionally separate from the no-backend token path.
 
 ## Provider Recipes
 
@@ -64,7 +70,7 @@ Local model notes:
 
 ## Codex Brief
 
-The Codex-ready brief is generated from the current PR metadata, deterministic risk score, top file signals, and reviewer persona notes. It is Markdown-only and can be copied into Codex or another code-review assistant without requiring the optional AI review step.
+The Codex-ready brief is generated from the current PR metadata, deterministic risk score, top file signals, and reviewer persona notes. It is Markdown-only and can be copied into Codex or another code-review assistant without requiring the model review step.
 
 ## Limitations
 

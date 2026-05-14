@@ -128,11 +128,20 @@ function parseNextLink(linkHeader: string | null): string | null {
   return null;
 }
 
-async function githubGetJson<T>(url: string, signal?: AbortSignal): Promise<T> {
+export function buildGitHubHeaders(token?: string): HeadersInit {
+  return {
+    Accept: "application/vnd.github+json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
+async function githubGetJson<T>(
+  url: string,
+  signal?: AbortSignal,
+  token?: string
+): Promise<T> {
   const response = await fetch(url, {
-    headers: {
-      Accept: "application/vnd.github+json",
-    },
+    headers: buildGitHubHeaders(token),
     signal,
   });
 
@@ -151,14 +160,15 @@ async function fetchAllFiles(
   owner: string,
   repo: string,
   pullNumber: number,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  token?: string
 ): Promise<ChangedFile[]> {
   const files: ChangedFile[] = [];
   let url: string | null = `${API_BASE}/repos/${owner}/${repo}/pulls/${pullNumber}/files?per_page=100&page=1`;
 
   while (url) {
     const response = await fetch(url, {
-      headers: { Accept: "application/vnd.github+json" },
+      headers: buildGitHubHeaders(token),
       signal,
     });
 
@@ -180,6 +190,7 @@ async function fetchAllFiles(
 
 export interface FetchPrDataOptions {
   signal?: AbortSignal;
+  githubToken?: string;
 }
 
 export async function fetchPrData(
@@ -190,9 +201,10 @@ export async function fetchPrData(
   const [pullResponse, filesResponse] = await Promise.all([
     githubGetJson<GithubPullResponse>(
       `${API_BASE}/repos/${owner}/${repo}/pulls/${pullNumber}`,
-      options.signal
+      options.signal,
+      options.githubToken
     ),
-    fetchAllFiles(owner, repo, pullNumber, options.signal),
+    fetchAllFiles(owner, repo, pullNumber, options.signal, options.githubToken),
   ]);
 
   return {

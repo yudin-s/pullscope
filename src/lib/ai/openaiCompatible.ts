@@ -63,7 +63,7 @@ function normalizeResponsesPayload(
     stream: false,
     ...(responseFormat === "json_object"
       ? {
-          response_format: { type: "json_object" },
+          text: { format: { type: "json_object" } },
         }
       : {}),
   };
@@ -90,6 +90,15 @@ function extractTextFromChat(raw: RawChatBody): string {
   const first = raw.choices?.[0];
   const content = first?.message?.content;
   return typeof content === "string" ? content : "";
+}
+
+function extractProviderError(raw: Record<string, unknown>, fallback: string): string {
+  if (typeof raw.error === "object" && raw.error && "message" in raw.error) {
+    return String((raw.error as { message?: unknown }).message);
+  }
+  if (typeof raw.message === "string") return raw.message;
+  if (typeof raw.rawText === "string") return raw.rawText;
+  return fallback;
 }
 
 async function readJsonOrText(response: Response): Promise<unknown> {
@@ -180,7 +189,7 @@ export async function callOpenAICompatible<T = unknown>(
       }
 
       if (response.status !== 404 && response.status !== 405) {
-        throw new Error(`Responses endpoint error: ${response.status}`);
+        throw new Error(extractProviderError(raw, `Responses endpoint error: ${response.status}`));
       }
     } catch (error) {
       const diag = createCorsHint(error, preset.id, endpoint);
@@ -217,11 +226,9 @@ export async function callOpenAICompatible<T = unknown>(
 
   const rawChat = (await readJsonOrText(chatResponse)) as Record<string, unknown>;
   if (!chatResponse.ok) {
-    const message =
-      typeof rawChat.error === "object" && rawChat.error && "message" in rawChat.error
-        ? String((rawChat.error as { message?: unknown }).message)
-        : `Chat Completions endpoint error: ${chatResponse.status}`;
-    throw new Error(message);
+    throw new Error(
+      extractProviderError(rawChat, `Chat Completions endpoint error: ${chatResponse.status}`)
+    );
   }
   const text = extractTextFromChat(rawChat as RawChatBody);
   return {
