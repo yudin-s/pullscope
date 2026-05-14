@@ -70,6 +70,30 @@ function normalizeResponsesPayload(
   return body;
 }
 
+function normalizeChatResponseFormat(
+  providerId: ProviderId,
+  responseFormat?: "text" | "json_object",
+  forceJsonSchema = false
+) {
+  if (responseFormat !== "json_object") return {};
+  if (providerId === "lmstudio" || forceJsonSchema) {
+    return {
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "pullscope_review",
+          schema: {
+            type: "object",
+            additionalProperties: true,
+          },
+          strict: false,
+        },
+      },
+    };
+  }
+  return { response_format: { type: "json_object" } };
+}
+
 function extractTextFromResponses(raw: RawResponsesBody): string {
   if (raw.output_text) return raw.output_text;
   if (Array.isArray(raw.output)) {
@@ -132,6 +156,14 @@ async function fetchWithTimeout(
 
 function createCorsHint(error: unknown, providerId: ProviderId, endpoint: string) {
   return diagnoseCors(error, providerId, endpoint);
+}
+
+function shouldRetryWithJsonSchema(error: string, responseFormat?: "text" | "json_object") {
+  return (
+    responseFormat === "json_object" &&
+    /response_format\.type|response_format|json_schema/i.test(error) &&
+    /json_schema/i.test(error)
+  );
 }
 
 export async function callOpenAICompatible<T = unknown>(
@@ -205,27 +237,51 @@ export async function callOpenAICompatible<T = unknown>(
   }
 
   const chatEndpoint = `${config.baseUrl}${preset.chatCompletionsPath}`;
-  const chatResponse = await fetchWithTimeout(
-    chatEndpoint,
-    {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        model,
-        messages: opts.messages,
-        temperature,
-        ...(maxTokens ? { max_tokens: maxTokens } : {}),
-        ...(opts.responseFormat === "json_object"
-          ? { response_format: { type: "json_object" } }
-          : {}),
-      }),
-      signal,
-    },
-    opts.timeoutMs
-  );
+  async function callChatCompletions(forceJsonSchema = false) {
+    const response = await fetchWithTimeout(
+      chatEndpoint,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          model,
+          messages: opts.messages,
+          temperature,
+          ...(maxTokens ? { max_tokens: maxTokens } : {}),
+          ...normalizeChatResponseFormat(preset.id, opts.responseFormat, forceJsonSchema),
+        }),
+        signal,
+      },
+      opts.timeoutMs
+    );
+    const raw = (await readJsonOrText(response)) as Record<string, unknown>;
+    return { response, raw };
+  }
 
-  const rawChat = (await readJsonOrText(chatResponse)) as Record<string, unknown>;
+  let { response: chatResponse, raw: rawChat } = await callChatCompletions();
   if (!chatResponse.ok) {
+    const errorMessage = extractProviderError(
+      rawChat,
+      `Chat Completions endpoint error: ${chatResponse.status}`
+    );
+    if (preset.id !== "lmstudio" && shouldRetryWithJsonSchema(errorMessage, opts.responseFormat)) {
+      const retry = await callChatCompletions(true);
+      chatResponse = retry.response;
+      rawChat = retry.raw;
+      if (chatResponse.ok) {
+        const text = extractTextFromChat(rawChat as RawChatBody);
+        return {
+          text,
+          endpointUsed: "chat_completions",
+          status: chatResponse.status,
+          raw: rawChat,
+          data:
+            opts.responseFormat === "json_object"
+              ? (safeParseJSON<T>(text) as T | undefined)
+              : undefined,
+        };
+      }
+    }
     throw new Error(
       extractProviderError(rawChat, `Chat Completions endpoint error: ${chatResponse.status}`)
     );
