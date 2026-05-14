@@ -2,6 +2,8 @@
 
 Client-side AI PR review with your own model endpoint.
 
+[Live demo](https://yudin-s.github.io/pullscope/) · [Source](https://github.com/yudin-s/pullscope)
+
 PullScope is a zero-backend workbench for reviewing public GitHub pull requests. Paste a PR URL, inspect deterministic local risk signals, and optionally run an AI review directly from your browser against an OpenAI-compatible endpoint.
 
 It is designed as a portfolio-grade open-source devtool: useful without login, static-hostable on GitHub Pages, security-aware, and polished enough to show real product engineering.
