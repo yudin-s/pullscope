@@ -33,6 +33,11 @@ export interface ProviderSelection {
   baseUrl?: string;
   apiKey?: string;
   endpointMode?: EndpointMode;
+  customAuthHeader?: {
+    enabled: boolean;
+    name?: string;
+    value?: string;
+  };
   headers?: Record<string, string>;
 }
 
@@ -150,12 +155,20 @@ export function buildProviderHeaders(
 ): Record<string, string> {
   const preset = getProviderPreset(provider.id);
   const key = provider.apiKey ?? getProviderApiKeyFromMemory(provider.id);
+  const customAuthName = provider.customAuthHeader?.name?.trim();
+  const customAuthValue = provider.customAuthHeader?.value?.trim();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     Accept: "application/json",
   };
+  const hasCustomAuthHeader =
+    provider.customAuthHeader?.enabled === true &&
+    Boolean(customAuthName) &&
+    Boolean(customAuthValue);
 
-  if (preset.auth.needsApiKey && key) {
+  if (hasCustomAuthHeader) {
+    headers[customAuthName as string] = customAuthValue as string;
+  } else if (preset.auth.needsApiKey && key) {
     headers.Authorization = `Bearer ${key}`;
   }
 

@@ -14,6 +14,7 @@ import {
   KeyRound,
   Loader2,
   Lock,
+  LockOpen,
   Network,
   Radar,
   RefreshCw,
@@ -383,6 +384,7 @@ export function App() {
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState("");
+  const [isPrivatePr, setIsPrivatePr] = useState(false);
   const [githubToken, setGithubToken] = useState("");
 
   const [providerId, setProviderId] = useState<ProviderId>("openai");
@@ -395,6 +397,9 @@ export function App() {
   const [modelLoadMessage, setModelLoadMessage] = useState("");
   const [endpointMode, setEndpointMode] = useState<EndpointMode>("auto");
   const [apiKey, setApiKey] = useState("");
+  const [useCustomAuthHeader, setUseCustomAuthHeader] = useState(false);
+  const [customAuthHeaderName, setCustomAuthHeaderName] = useState("Authorization");
+  const [customAuthHeaderValue, setCustomAuthHeaderValue] = useState("");
   const [profileStorage, setProfileStorage] = useState<StorageScope>("memory");
   const saveProfile = profileStorage !== "memory";
   const [diagnostics, setDiagnostics] = useState<DiagnosticRow[]>([]);
@@ -448,9 +453,24 @@ export function App() {
     setModelLoadMessage("");
     setEndpointMode("auto");
     setApiKey("");
+    setUseCustomAuthHeader(false);
+    setCustomAuthHeaderName("Authorization");
+    setCustomAuthHeaderValue("");
     setProviderApiKeyInMemory(nextId, undefined);
     setDiagnostics([]);
     setAiReview(null);
+  }
+
+  function hasCustomAuthHeader() {
+    return Boolean(
+      useCustomAuthHeader &&
+        customAuthHeaderName.trim().length > 0 &&
+        customAuthHeaderValue.trim().length > 0
+    );
+  }
+
+  function isProviderAuthReady() {
+    return Boolean(apiKey || hasCustomAuthHeader() || !selectedPreset.auth.needsApiKey);
   }
 
   function currentProvider(): ProviderSelection {
@@ -461,6 +481,11 @@ export function App() {
       model,
       endpointMode,
       apiKey: apiKey || undefined,
+      customAuthHeader: {
+        enabled: useCustomAuthHeader,
+        name: customAuthHeaderName,
+        value: customAuthHeaderValue,
+      },
     };
   }
 
@@ -499,7 +524,7 @@ export function App() {
     setAiError("");
     try {
       const data = await fetchPrData(prUrl.trim(), {
-        githubToken: githubToken || undefined,
+        githubToken: isPrivatePr ? githubToken || undefined : undefined,
       });
       setPrData(data);
       setLoadState("idle");
@@ -543,12 +568,25 @@ export function App() {
 
     rows.push({
       label: "Key handling",
-      status: apiKey || !selectedPreset.auth.needsApiKey ? "pass" : "warn",
+      status: isProviderAuthReady() ? "pass" : "warn",
       detail: selectedPreset.auth.needsApiKey
-        ? apiKey
-          ? "API key is held in memory for this tab."
-          : "This preset usually needs a bearer key."
-        : "This preset usually works without an API key.",
+        ? hasCustomAuthHeader()
+          ? `Custom auth header "${customAuthHeaderName.trim()}" is held in memory for this tab.`
+          : apiKey
+            ? "API key is held in memory for this tab."
+            : "This preset usually needs a bearer key."
+        : hasCustomAuthHeader()
+          ? `Custom auth header "${customAuthHeaderName.trim()}" will be sent with provider requests.`
+          : "This preset usually works without an API key.",
+    });
+    rows.push({
+      label: "Auth header",
+      status: useCustomAuthHeader ? (hasCustomAuthHeader() ? "pass" : "warn") : "pass",
+      detail: useCustomAuthHeader
+        ? hasCustomAuthHeader()
+          ? `Using ${customAuthHeaderName.trim()} instead of the default bearer Authorization header.`
+          : "Fill both custom auth header fields, or turn this off to use the default bearer header."
+        : "Using the provider default auth mode.",
     });
     rows.push({
       label: "Endpoint mode",
@@ -565,7 +603,7 @@ export function App() {
     const normalizedBaseUrl = baseUrl.replace(/\/$/, "");
     const provider = currentProvider();
     const headers = buildProviderHeaders(provider);
-    const authReady = Boolean(apiKey || !selectedPreset.auth.needsApiKey);
+    const authReady = isProviderAuthReady();
 
     setDiagnostics([
       ...rows,
@@ -670,7 +708,7 @@ export function App() {
   async function refreshModelList() {
     setModelLoadState("loading");
     setModelLoadMessage("Checking model list endpoint.");
-    const authReady = Boolean(apiKey || !selectedPreset.auth.needsApiKey);
+    const authReady = isProviderAuthReady();
     if (!authReady) {
       setModelLoadState("error");
       setModelLoadMessage("Add an API key to fetch models for this provider.");
@@ -896,6 +934,53 @@ export function App() {
                   placeholder={selectedPreset.auth.needsApiKey ? "Memory-only bearer key" : "Optional"}
                   className="field"
                 />
+                <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.03] p-3">
+                  <button
+                    type="button"
+                    aria-label="Use custom auth header"
+                    aria-pressed={useCustomAuthHeader}
+                    onClick={() => setUseCustomAuthHeader((value) => !value)}
+                    className={clsx(
+                      "flex w-full items-center justify-between gap-3 text-left text-sm font-semibold transition",
+                      useCustomAuthHeader ? "text-white" : "text-slate-300"
+                    )}
+                  >
+                    <span className="inline-flex items-center gap-2">
+                      Use custom auth header
+                      <HelpTooltip label="Custom auth header name and value stay only in this browser tab's memory. When enabled and filled, PullScope sends this exact header instead of the default Authorization: Bearer header." />
+                    </span>
+                    <span
+                      className={clsx(
+                        "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition",
+                        useCustomAuthHeader ? "bg-signal-cyan/80" : "bg-slate-700"
+                      )}
+                    >
+                      <span
+                        className={clsx(
+                          "h-5 w-5 rounded-full bg-white shadow transition",
+                          useCustomAuthHeader ? "translate-x-5" : "translate-x-0.5"
+                        )}
+                      />
+                    </span>
+                  </button>
+                  {useCustomAuthHeader && (
+                    <div className="mt-3 grid gap-3 sm:grid-cols-[0.8fr_1.2fr]">
+                      <input
+                        value={customAuthHeaderName}
+                        onChange={(event) => setCustomAuthHeaderName(event.target.value)}
+                        placeholder="Header name"
+                        className="field"
+                      />
+                      <input
+                        type="password"
+                        value={customAuthHeaderValue}
+                        onChange={(event) => setCustomAuthHeaderValue(event.target.value)}
+                        placeholder="Header value, e.g. Bearer nvapi-..."
+                        className="field"
+                      />
+                    </div>
+                  )}
+                </div>
               </Field>
               <Field label="Profile storage">
                 <DesignSelect<StorageScope>
@@ -914,7 +999,7 @@ export function App() {
               <p className="mt-3 rounded-lg border border-signal-amber/30 bg-signal-amber/10 p-3 text-sm leading-6 text-amber-100">
                 Profile saving stores provider, model, base URL, and endpoint mode in{" "}
                 {profileStorage === "session" ? "sessionStorage" : "localStorage"}. API keys
-                remain memory-only.
+                and custom auth header values remain memory-only.
               </p>
             )}
             <div className="mt-5 grid gap-3 sm:grid-cols-2">
@@ -1081,9 +1166,41 @@ export function App() {
               <h2 className="text-xl font-semibold text-white">PR analyzer</h2>
             </div>
             <form onSubmit={analyzeLivePr} className="mt-5 space-y-4">
-              <label className="block text-sm font-medium text-slate-300" htmlFor="pr-url">
-                Public GitHub PR URL
-              </label>
+              <div className="flex items-center justify-between gap-3">
+                <label className="block text-sm font-medium text-slate-300" htmlFor="pr-url">
+                  {isPrivatePr ? "Private GitHub PR URL" : "Public GitHub PR URL"}
+                </label>
+                <button
+                  type="button"
+                  aria-label="GitHub PR visibility"
+                  aria-pressed={isPrivatePr}
+                  onClick={() => setIsPrivatePr((value) => !value)}
+                  className={clsx(
+                    "inline-flex min-h-10 w-[132px] items-center justify-between gap-3 rounded-full border px-3 py-2 text-xs font-semibold transition",
+                    isPrivatePr
+                      ? "border-signal-cyan/50 bg-signal-cyan/15 text-white shadow-glow"
+                      : "border-white/15 bg-white/[0.04] text-slate-300 hover:bg-white/10"
+                  )}
+                >
+                  <span
+                    className={clsx(
+                      "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition",
+                      isPrivatePr ? "bg-signal-cyan/80" : "bg-slate-700"
+                    )}
+                  >
+                    <span
+                      className={clsx(
+                        "h-5 w-5 rounded-full bg-white shadow transition",
+                        isPrivatePr ? "translate-x-5" : "translate-x-0.5"
+                      )}
+                    />
+                  </span>
+                  <span className="inline-flex w-16 items-center gap-2 whitespace-nowrap">
+                    {isPrivatePr ? <Lock className="h-4 w-4" /> : <LockOpen className="h-4 w-4" />}
+                    <span>{isPrivatePr ? "Private" : "Public"}</span>
+                  </span>
+                </button>
+              </div>
               <input
                 id="pr-url"
                 value={prUrl}
@@ -1091,18 +1208,30 @@ export function App() {
                 placeholder={samplePrUrl}
                 className="w-full rounded-lg border border-white/10 bg-ink-950 px-3 py-3 text-sm text-white outline-none transition focus:border-signal-cyan"
               />
-              <label className="flex items-center gap-2 text-sm font-medium text-slate-300" htmlFor="github-token">
-                GitHub token for private PRs
-                <HelpTooltip label="This token is optional and memory-only. PullScope sends it directly from your browser to api.github.com for PR reads, never stores it in profile storage, and has no backend that can receive it." />
-              </label>
-              <input
-                id="github-token"
-                type="password"
-                value={githubToken}
-                onChange={(event) => setGithubToken(event.target.value)}
-                placeholder="Optional memory-only fine-grained token"
-                className="w-full rounded-lg border border-white/10 bg-ink-950 px-3 py-3 text-sm text-white outline-none transition focus:border-signal-cyan"
-              />
+              <AnimatePresence initial={false}>
+                {isPrivatePr && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    transition={{ duration: 0.18 }}
+                    className="space-y-2"
+                  >
+                    <label className="flex items-center gap-2 text-sm font-medium text-slate-300" htmlFor="github-token">
+                      GitHub token for private PRs
+                      <HelpTooltip label="This token is memory-only. PullScope sends it directly from your browser to api.github.com for PR reads, never stores it in profile storage, and has no backend that can receive it." />
+                    </label>
+                    <input
+                      id="github-token"
+                      type="password"
+                      value={githubToken}
+                      onChange={(event) => setGithubToken(event.target.value)}
+                      placeholder="Memory-only fine-grained token"
+                      className="w-full rounded-lg border border-white/10 bg-ink-950 px-3 py-3 text-sm text-white outline-none transition focus:border-signal-cyan"
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
               <div className="grid gap-3 sm:grid-cols-2">
                 <button
                   type="submit"
