@@ -1176,7 +1176,7 @@ export function App() {
                   aria-pressed={isPrivatePr}
                   onClick={() => setIsPrivatePr((value) => !value)}
                   className={clsx(
-                    "inline-flex min-h-10 w-[132px] items-center justify-between gap-3 rounded-full border px-3 py-2 text-xs font-semibold transition",
+                    "inline-flex h-10 w-40 items-center justify-between gap-3 rounded-full border px-3 py-2 text-xs font-semibold transition",
                     isPrivatePr
                       ? "border-signal-cyan/50 bg-signal-cyan/15 text-white shadow-glow"
                       : "border-white/15 bg-white/[0.04] text-slate-300 hover:bg-white/10"
@@ -1195,7 +1195,7 @@ export function App() {
                       )}
                     />
                   </span>
-                  <span className="inline-flex w-16 items-center gap-2 whitespace-nowrap">
+                  <span className="inline-flex w-[76px] items-center gap-2 whitespace-nowrap">
                     {isPrivatePr ? <Lock className="h-4 w-4" /> : <LockOpen className="h-4 w-4" />}
                     <span>{isPrivatePr ? "Private" : "Public"}</span>
                   </span>
@@ -1370,13 +1370,24 @@ export function App() {
               security-aware UX that demonstrates product engineering without server-side secrets.
             </p>
           </div>
-          <a
-            href="#analyzer"
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-signal-lime px-4 py-3 font-semibold text-ink-950"
-          >
-            Analyze a PR
-            <ArrowRight className="h-4 w-4" />
-          </a>
+          <div className="flex flex-col gap-3 sm:flex-row md:flex-col">
+            <a
+              href="https://github.com/yudin-s"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/15 px-4 py-3 font-semibold text-white hover:bg-white/10"
+            >
+              <Github className="h-4 w-4" />
+              Author GitHub
+            </a>
+            <a
+              href="#analyzer"
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-signal-lime px-4 py-3 font-semibold text-ink-950"
+            >
+              Analyze a PR
+              <ArrowRight className="h-4 w-4" />
+            </a>
+          </div>
         </div>
       </footer>
       <AnimatePresence>
