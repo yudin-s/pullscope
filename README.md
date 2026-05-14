@@ -39,7 +39,7 @@ All GitHub reads use public unauthenticated REST endpoints. All model calls, whe
 
 PullScope runs entirely in your browser. Your model key is sent directly from your browser to the endpoint you configure. PullScope has no backend and cannot store your key on a server.
 
-Memory-only mode is the default and recommended behavior. Use temporary, restricted, or low-limit API keys. Optional session profile saving is an advanced opt-in and stores only provider, model, base URL, and endpoint mode. API keys remain memory-only.
+Memory-only mode is the default and recommended behavior. Use temporary, restricted, or low-limit API keys. Optional session or local profile saving is an advanced opt-in and stores only provider, model, base URL, and endpoint mode. API keys remain memory-only.
 
 Because this is a browser-only app, CORS matters. If a provider does not allow requests from the current origin, PullScope cannot bypass that policy without adding a backend or proxy, which is intentionally outside the MVP architecture.
 

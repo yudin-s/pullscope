@@ -40,7 +40,12 @@ import {
 import { parseStructuredResponse } from "../lib/ai/responseParser";
 import { runRiskEngine } from "../lib/risk/riskEngine";
 import { RiskAssessment } from "../lib/risk/types";
-import { saveModelProfile } from "../lib/storage/modelProfileStorage";
+import {
+  getModelProfiles,
+  ModelProfile,
+  saveModelProfile,
+  StorageScope,
+} from "../lib/storage/modelProfileStorage";
 
 type LoadState = "idle" | "loading" | "error";
 
@@ -68,6 +73,10 @@ interface DiagnosticRow {
 }
 
 const samplePrUrl = "https://github.com/vercel/next.js/pull/70568";
+
+function latestProfile(profiles: ModelProfile[]): ModelProfile | undefined {
+  return [...profiles].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+}
 
 function levelTone(level: RiskAssessment["level"]) {
   return {
@@ -219,7 +228,8 @@ export function App() {
   const [model, setModel] = useState(selectedPreset.defaultModel);
   const [endpointMode, setEndpointMode] = useState<EndpointMode>("auto");
   const [apiKey, setApiKey] = useState("");
-  const [saveProfile, setSaveProfile] = useState(false);
+  const [profileStorage, setProfileStorage] = useState<StorageScope>("memory");
+  const saveProfile = profileStorage !== "memory";
   const [diagnostics, setDiagnostics] = useState<DiagnosticRow[]>([]);
   const [doctorRunning, setDoctorRunning] = useState(false);
   const [aiRunning, setAiRunning] = useState(false);
@@ -235,9 +245,20 @@ export function App() {
   const codexBrief = useMemo(() => buildCodexBrief(prData, risk), [prData, risk]);
 
   useEffect(() => {
-    if (!saveProfile) return;
-    persistModelProfile();
-  }, [saveProfile, providerId, baseUrl, model, endpointMode]);
+    const consent = { allowSessionStorage: true, allowLocalStorage: true };
+    const sessionProfile = latestProfile(getModelProfiles("session", consent));
+    const localProfile = latestProfile(getModelProfiles("local", consent));
+    if (sessionProfile) {
+      applyStoredProfile(sessionProfile, "session");
+    } else if (localProfile) {
+      applyStoredProfile(localProfile, "local");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (profileStorage === "memory") return;
+    persistModelProfile(profileStorage);
+  }, [profileStorage, providerId, baseUrl, model, endpointMode]);
 
   function selectPreset(nextId: ProviderId) {
     const nextPreset = getProviderPreset(nextId);
@@ -262,7 +283,17 @@ export function App() {
     };
   }
 
-  function persistModelProfile() {
+  function applyStoredProfile(profile: ModelProfile, scope: StorageScope) {
+    if (!presets.some((preset) => preset.id === profile.providerId)) return;
+    const preset = getProviderPreset(profile.providerId as ProviderId);
+    setProviderId(profile.providerId as ProviderId);
+    setBaseUrl(profile.baseUrl || preset.defaultBaseUrl);
+    setModel(profile.model || preset.defaultModel);
+    setEndpointMode((profile.endpointMode as EndpointMode | undefined) || "auto");
+    setProfileStorage(scope);
+  }
+
+  function persistModelProfile(scope: StorageScope) {
     saveModelProfile(
       {
         providerId,
@@ -271,8 +302,11 @@ export function App() {
         endpointMode,
         updatedAt: new Date().toISOString(),
       },
-      "session",
-      { allowSessionStorage: saveProfile, allowLocalStorage: false },
+      scope,
+      {
+        allowSessionStorage: scope === "session",
+        allowLocalStorage: scope === "local",
+      },
     );
   }
 
@@ -526,7 +560,7 @@ export function App() {
             </a>
           </nav>
           <a
-            href="https://github.com/pullscope/pullscope"
+            href="https://github.com/yudin-s/pullscope"
             className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-sm text-slate-200 hover:bg-white/10"
           >
             <Github className="h-4 w-4" />
@@ -762,22 +796,23 @@ export function App() {
                   className="field"
                 />
               </Field>
-              <Field label="Storage">
-                <label className="flex min-h-[46px] items-center gap-3 rounded-lg border border-white/10 bg-ink-950 px-3 text-sm text-slate-300">
-                  <input
-                    type="checkbox"
-                    checked={saveProfile}
-                    onChange={(event) => setSaveProfile(event.target.checked)}
-                    className="h-4 w-4 accent-signal-cyan"
-                  />
-                  Advanced session profile saving
-                </label>
+              <Field label="Profile storage">
+                <select
+                  value={profileStorage}
+                  onChange={(event) => setProfileStorage(event.target.value as StorageScope)}
+                  className="field"
+                >
+                  <option value="memory">Memory only</option>
+                  <option value="session">Session profile</option>
+                  <option value="local">Local profile</option>
+                </select>
               </Field>
             </div>
             {saveProfile && (
               <p className="mt-3 rounded-lg border border-signal-amber/30 bg-signal-amber/10 p-3 text-sm leading-6 text-amber-100">
-                Session profile saving stores provider, model, base URL, and endpoint mode in this
-                browser tab. API keys remain memory-only.
+                Profile saving stores provider, model, base URL, and endpoint mode in{" "}
+                {profileStorage === "session" ? "sessionStorage" : "localStorage"}. API keys
+                remain memory-only.
               </p>
             )}
             <div className="mt-5 flex flex-col gap-3 sm:flex-row">
