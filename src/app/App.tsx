@@ -263,6 +263,118 @@ function HelpTooltip({ label }: { label: string }) {
   );
 }
 
+function Modal({
+  title,
+  icon,
+  children,
+  onClose,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/80 px-4 backdrop-blur">
+      <div className="max-h-[86vh] w-full max-w-2xl overflow-auto rounded-lg border border-white/10 bg-ink-900 p-5 shadow-glow">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            {icon}
+            <h2 className="text-xl font-semibold text-white">{title}</h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-white/10 px-3 py-2 text-sm font-semibold text-slate-200 hover:bg-white/10"
+          >
+            Close
+          </button>
+        </div>
+        <div className="mt-5">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function DesignSelect<T extends string>({
+  value,
+  options,
+  onChange,
+  ariaLabel,
+}: {
+  value: T;
+  options: Array<{ value: T; label: string; hint?: string }>;
+  onChange: (value: T) => void;
+  ariaLabel: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = options.find((option) => option.value === value) ?? options[0];
+
+  return (
+    <div
+      className="relative"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setOpen(false);
+        }
+      }}
+    >
+      <button
+        type="button"
+        aria-label={ariaLabel}
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        onClick={() => setOpen((state) => !state)}
+        className="flex min-h-[46px] w-full items-center justify-between gap-3 rounded-lg border border-white/10 bg-ink-950 px-3 py-3 text-left text-sm text-white outline-none transition hover:bg-white/[0.04] focus:border-signal-cyan"
+      >
+        <span className="min-w-0">
+          <span className="block truncate">{selected?.label ?? value}</span>
+          {selected?.hint && (
+            <span className="mt-1 block truncate text-xs text-slate-500">{selected.hint}</span>
+          )}
+        </span>
+        <ArrowRight
+          className={clsx(
+            "h-4 w-4 shrink-0 text-slate-500 transition",
+            open ? "-rotate-90 text-signal-cyan" : "rotate-90",
+          )}
+        />
+      </button>
+      {open && (
+        <div
+          role="listbox"
+          aria-label={`${ariaLabel} options`}
+          className="absolute z-30 mt-2 max-h-72 w-full overflow-auto rounded-lg border border-white/10 bg-ink-950 p-1 shadow-glow"
+        >
+          {options.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              role="option"
+              aria-selected={option.value === value}
+              onClick={() => {
+                onChange(option.value);
+                setOpen(false);
+              }}
+              className={clsx(
+                "w-full rounded-lg px-3 py-2 text-left text-sm transition",
+                option.value === value
+                  ? "bg-signal-cyan/10 text-white"
+                  : "text-slate-300 hover:bg-white/[0.06]",
+              )}
+            >
+              <span className="block truncate font-medium">{option.label}</span>
+              {option.hint && (
+                <span className="mt-1 block truncate text-xs text-slate-500">{option.hint}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function App() {
   const presets = getProviderPresets();
   const [prUrl, setPrUrl] = useState(samplePrUrl);
@@ -275,6 +387,7 @@ export function App() {
 
   const [providerId, setProviderId] = useState<ProviderId>("openai");
   const selectedPreset = getProviderPreset(providerId);
+  const [aiPowerEnabled, setAiPowerEnabled] = useState(false);
   const [baseUrl, setBaseUrl] = useState(selectedPreset.defaultBaseUrl);
   const [model, setModel] = useState(selectedPreset.defaultModel);
   const [fetchedModels, setFetchedModels] = useState<string[]>([]);
@@ -285,9 +398,11 @@ export function App() {
   const [profileStorage, setProfileStorage] = useState<StorageScope>("memory");
   const saveProfile = profileStorage !== "memory";
   const [diagnostics, setDiagnostics] = useState<DiagnosticRow[]>([]);
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [doctorRunning, setDoctorRunning] = useState(false);
   const [aiRunning, setAiRunning] = useState(false);
   const [aiError, setAiError] = useState("");
+  const [aiErrorOpen, setAiErrorOpen] = useState(false);
   const [aiReview, setAiReview] = useState<{
     parsed?: AiReviewShape;
     raw: string;
@@ -304,7 +419,7 @@ export function App() {
       selectedPreset.defaultModel,
       model,
     ].filter(Boolean);
-    return [...new Set(options)].slice(0, 60);
+    return [...new Set(options)];
   }, [fetchedModels, model, selectedPreset]);
 
   useEffect(() => {
@@ -404,6 +519,7 @@ export function App() {
 
   async function runDoctor() {
     setDoctorRunning(true);
+    setDiagnosticsOpen(true);
     setDiagnostics([{ label: "URL syntax", status: "pending", detail: "Checking base URL." }]);
     const rows: DiagnosticRow[] = [];
 
@@ -590,6 +706,7 @@ export function App() {
   async function runAiReview() {
     setAiRunning(true);
     setAiError("");
+    setAiErrorOpen(false);
     setAiReview(null);
     try {
       const prompt = buildRiskPrompt(prData, risk, {
@@ -623,6 +740,7 @@ export function App() {
       });
     } catch (err) {
       setAiError(String((err as Error)?.message ?? err));
+      setAiErrorOpen(true);
     } finally {
       setAiRunning(false);
     }
@@ -638,6 +756,192 @@ export function App() {
       setCopyError(String((err as Error)?.message ?? err));
     }
   }
+
+  const providerWizard = (
+    <div id="provider" className="mt-6 border-t border-white/10 pt-5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <Bot className="h-5 w-5 text-signal-lime" />
+          <div>
+            <h2 className="text-lg font-semibold text-white">Provider wizard</h2>
+            <p className="mt-1 text-xs text-slate-500">Combined local+AI review controls</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          aria-pressed={aiPowerEnabled}
+          onClick={() => setAiPowerEnabled((value) => !value)}
+          className={clsx(
+            "inline-flex min-h-10 items-center gap-3 rounded-full border px-3 py-2 text-xs font-semibold transition",
+            aiPowerEnabled
+              ? "border-signal-lime/50 bg-signal-lime/20 text-white shadow-glow"
+              : "border-white/15 bg-white/[0.04] text-slate-300 hover:bg-white/10",
+          )}
+        >
+          <span className={clsx(
+            "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition",
+            aiPowerEnabled ? "bg-signal-lime/80" : "bg-slate-700",
+          )}>
+            <span
+              className={clsx(
+                "h-5 w-5 rounded-full bg-white shadow transition",
+                aiPowerEnabled ? "translate-x-5" : "translate-x-0.5",
+              )}
+            />
+          </span>
+          <span className="inline-flex items-center gap-2 whitespace-nowrap">
+            <Sparkles className="h-4 w-4" />
+            Turn AI Power
+          </span>
+        </button>
+      </div>
+
+      <AnimatePresence initial={false}>
+        {aiPowerEnabled && (
+          <motion.div
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.22 }}
+            className="overflow-visible"
+          >
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              {presets.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => selectPreset(preset.id)}
+                  className={clsx(
+                    "rounded-lg border px-3 py-3 text-left text-sm transition",
+                    preset.id === providerId
+                      ? "border-signal-cyan bg-signal-cyan/10 text-white"
+                      : "border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/10",
+                  )}
+                >
+                  <span className="block font-semibold">{preset.name}</span>
+                  <span className="mt-1 block text-xs text-slate-500">
+                    {preset.supportsResponses ? "Responses" : "Chat"} ready
+                  </span>
+                </button>
+              ))}
+            </div>
+            <div className="mt-5 space-y-4">
+              <Field label="Base URL">
+                <input
+                  value={baseUrl}
+                  onChange={(event) => setBaseUrl(event.target.value)}
+                  className="field"
+                />
+              </Field>
+              <Field label="Model">
+                <div className="space-y-2">
+                  <DesignSelect
+                    value={model}
+                    onChange={setModel}
+                    ariaLabel="Model"
+                    options={modelOptions.map((item) => ({ value: item, label: item }))}
+                  />
+                  <button
+                    type="button"
+                    onClick={refreshModelList}
+                    disabled={modelLoadState === "loading"}
+                    className="inline-flex items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-xs font-semibold text-white hover:bg-white/10 disabled:opacity-60"
+                  >
+                    {modelLoadState === "loading" ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-3.5 w-3.5" />
+                    )}
+                    Refresh models
+                  </button>
+                  {modelLoadMessage && (
+                    <p
+                      className={clsx(
+                        "text-xs leading-5",
+                        modelLoadState === "error" ? "text-signal-amber" : "text-slate-500",
+                      )}
+                    >
+                      {modelLoadMessage}
+                    </p>
+                  )}
+                </div>
+              </Field>
+              <Field label="Endpoint mode">
+                <DesignSelect<EndpointMode>
+                  value={endpointMode}
+                  onChange={setEndpointMode}
+                  ariaLabel="Endpoint mode"
+                  options={[
+                    { value: "auto", label: "Auto from preset" },
+                    { value: "responses", label: "Responses API" },
+                    { value: "chat_completions", label: "Chat Completions" },
+                  ]}
+                />
+              </Field>
+              <Field
+                label={
+                  <span className="inline-flex items-center gap-2">
+                    API key
+                    <HelpTooltip label="Model API keys stay in this browser tab's memory. PullScope sends the key directly to the endpoint you configure, never stores it in session/local profile storage, and has no server-side secret store." />
+                  </span>
+                }
+              >
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(event) => {
+                    setApiKey(event.target.value);
+                    setProviderApiKeyInMemory(providerId, event.target.value || undefined);
+                  }}
+                  placeholder={selectedPreset.auth.needsApiKey ? "Memory-only bearer key" : "Optional"}
+                  className="field"
+                />
+              </Field>
+              <Field label="Profile storage">
+                <DesignSelect<StorageScope>
+                  value={profileStorage}
+                  onChange={setProfileStorage}
+                  ariaLabel="Profile storage"
+                  options={[
+                    { value: "memory", label: "Memory only" },
+                    { value: "session", label: "Session profile" },
+                    { value: "local", label: "Local profile" },
+                  ]}
+                />
+              </Field>
+            </div>
+            {saveProfile && (
+              <p className="mt-3 rounded-lg border border-signal-amber/30 bg-signal-amber/10 p-3 text-sm leading-6 text-amber-100">
+                Profile saving stores provider, model, base URL, and endpoint mode in{" "}
+                {profileStorage === "session" ? "sessionStorage" : "localStorage"}. API keys
+                remain memory-only.
+              </p>
+            )}
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={runDoctor}
+                disabled={doctorRunning}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-white px-4 py-3 font-semibold text-ink-950 disabled:opacity-60"
+              >
+                {doctorRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Network className="h-4 w-4" />}
+                Run CORS Doctor
+              </button>
+              <button
+                type="button"
+                onClick={runAiReview}
+                disabled={aiRunning}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/15 px-4 py-3 font-semibold text-white hover:bg-white/10 disabled:opacity-60"
+              >
+                {aiRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+                Run combined review
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
 
   return (
     <main className="noise min-h-screen overflow-hidden">
@@ -842,203 +1146,10 @@ export function App() {
                 these keys on a server. Use temporary, read-only, restricted, or low-limit tokens.
               </p>
             </div>
+            {providerWizard}
           </div>
 
           <Dashboard pr={prData} risk={risk} />
-        </div>
-      </section>
-
-      <section id="provider" className="mx-auto max-w-7xl px-5 pb-10">
-        <div className="grid gap-6 lg:grid-cols-[1fr_1fr]">
-          <div className="rounded-lg border border-white/10 bg-ink-900/85 p-5">
-            <div className="flex items-center gap-3">
-              <Bot className="h-5 w-5 text-signal-lime" />
-              <h2 className="text-xl font-semibold text-white">Provider wizard</h2>
-            </div>
-            <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {presets.map((preset) => (
-                <button
-                  key={preset.id}
-                  type="button"
-                  onClick={() => selectPreset(preset.id)}
-                  className={clsx(
-                    "rounded-lg border px-3 py-3 text-left text-sm transition",
-                    preset.id === providerId
-                      ? "border-signal-cyan bg-signal-cyan/10 text-white"
-                      : "border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/10",
-                  )}
-                >
-                  <span className="block font-semibold">{preset.name}</span>
-                  <span className="mt-1 block text-xs text-slate-500">
-                    {preset.supportsResponses ? "Responses" : "Chat"} ready
-                  </span>
-                </button>
-              ))}
-            </div>
-            <div className="mt-5 grid gap-4 sm:grid-cols-2">
-              <Field label="Base URL">
-                <input
-                  value={baseUrl}
-                  onChange={(event) => setBaseUrl(event.target.value)}
-                  className="field"
-                />
-              </Field>
-              <Field label="Model">
-                <div className="space-y-2">
-                  <input
-                    value={model}
-                    onChange={(event) => setModel(event.target.value)}
-                    list="model-options"
-                    className="field"
-                  />
-                  <datalist id="model-options">
-                    {modelOptions.map((item) => (
-                      <option key={item} value={item} />
-                    ))}
-                  </datalist>
-                  <div className="flex flex-wrap gap-2">
-                    {modelOptions.slice(0, 5).map((item) => (
-                      <button
-                        key={item}
-                        type="button"
-                        onClick={() => setModel(item)}
-                        className={clsx(
-                          "rounded-lg border px-2 py-1 text-xs transition",
-                          item === model
-                            ? "border-signal-cyan bg-signal-cyan/10 text-white"
-                            : "border-white/10 bg-white/[0.03] text-slate-400 hover:bg-white/10",
-                        )}
-                      >
-                        {item}
-                      </button>
-                    ))}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={refreshModelList}
-                    disabled={modelLoadState === "loading"}
-                    className="inline-flex items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-xs font-semibold text-white hover:bg-white/10 disabled:opacity-60"
-                  >
-                    {modelLoadState === "loading" ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <RefreshCw className="h-3.5 w-3.5" />
-                    )}
-                    Refresh models
-                  </button>
-                  {modelLoadMessage && (
-                    <p
-                      className={clsx(
-                        "text-xs leading-5",
-                        modelLoadState === "error" ? "text-signal-amber" : "text-slate-500",
-                      )}
-                    >
-                      {modelLoadMessage}
-                    </p>
-                  )}
-                </div>
-              </Field>
-              <Field label="Endpoint mode">
-                <select
-                  value={endpointMode}
-                  onChange={(event) => setEndpointMode(event.target.value as EndpointMode)}
-                  className="field"
-                >
-                  <option value="auto">Auto from preset</option>
-                  <option value="responses">Responses API</option>
-                  <option value="chat_completions">Chat Completions</option>
-                </select>
-              </Field>
-              <Field
-                label={
-                  <span className="inline-flex items-center gap-2">
-                    API key
-                    <HelpTooltip label="Model API keys stay in this browser tab's memory. PullScope sends the key directly to the endpoint you configure, never stores it in session/local profile storage, and has no server-side secret store." />
-                  </span>
-                }
-              >
-                <input
-                  type="password"
-                  value={apiKey}
-                  onChange={(event) => {
-                    setApiKey(event.target.value);
-                    setProviderApiKeyInMemory(providerId, event.target.value || undefined);
-                  }}
-                  placeholder={selectedPreset.auth.needsApiKey ? "Memory-only bearer key" : "Optional"}
-                  className="field"
-                />
-              </Field>
-              <Field label="Profile storage">
-                <select
-                  value={profileStorage}
-                  onChange={(event) => setProfileStorage(event.target.value as StorageScope)}
-                  className="field"
-                >
-                  <option value="memory">Memory only</option>
-                  <option value="session">Session profile</option>
-                  <option value="local">Local profile</option>
-                </select>
-              </Field>
-            </div>
-            {saveProfile && (
-              <p className="mt-3 rounded-lg border border-signal-amber/30 bg-signal-amber/10 p-3 text-sm leading-6 text-amber-100">
-                Profile saving stores provider, model, base URL, and endpoint mode in{" "}
-                {profileStorage === "session" ? "sessionStorage" : "localStorage"}. API keys
-                remain memory-only.
-              </p>
-            )}
-            <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-              <button
-                type="button"
-                onClick={runDoctor}
-                disabled={doctorRunning}
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-white px-4 py-3 font-semibold text-ink-950 disabled:opacity-60"
-              >
-                {doctorRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Network className="h-4 w-4" />}
-                Run CORS Doctor
-              </button>
-              <button
-                type="button"
-                onClick={runAiReview}
-                disabled={aiRunning}
-                className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/15 px-4 py-3 font-semibold text-white hover:bg-white/10 disabled:opacity-60"
-              >
-                {aiRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
-                Run combined review
-              </button>
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-white/10 bg-ink-900/85 p-5">
-            <div className="flex items-center gap-3">
-              <Activity className="h-5 w-5 text-signal-amber" />
-              <h2 className="text-xl font-semibold text-white">CORS Doctor</h2>
-            </div>
-            <div className="mt-5 space-y-3">
-              {diagnostics.length === 0 ? (
-                <EmptyState
-                  icon={<Network className="h-5 w-5" />}
-                  title="No diagnostics yet"
-                  body="Run a browser compatibility probe before sending review context."
-                />
-              ) : (
-                diagnostics.map((row) => (
-                  <div key={row.label} className="flex gap-3 rounded-lg border border-white/10 bg-white/[0.04] p-3">
-                    <StatusIcon status={row.status} />
-                    <div>
-                      <p className="font-medium text-white">{row.label}</p>
-                      <p className="mt-1 text-sm leading-6 text-slate-400">{row.detail}</p>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-            <div className="mt-5 rounded-lg border border-white/10 bg-white/[0.04] p-4 text-sm leading-6 text-slate-400">
-              If CORS fails, the endpoint may still be valid. A fully client-side app cannot
-              bypass browser CORS policy or proxy requests, so use a browser-compatible endpoint,
-              enable CORS on your local server, or choose another provider.
-            </div>
-          </div>
         </div>
       </section>
 
@@ -1049,9 +1160,14 @@ export function App() {
               <h2 className="text-xl font-semibold text-white">Combined review output</h2>
           </div>
           {aiError && (
-            <div className="mt-5 rounded-lg border border-signal-rose/30 bg-signal-rose/10 p-3 text-sm text-rose-100">
-              {aiError}
-            </div>
+            <button
+              type="button"
+              onClick={() => setAiErrorOpen(true)}
+              className="mt-5 inline-flex items-center gap-2 rounded-lg border border-signal-rose/30 bg-signal-rose/10 px-3 py-2 text-sm font-semibold text-rose-100 hover:bg-signal-rose/20"
+            >
+              <AlertTriangle className="h-4 w-4" />
+              View AI error details
+            </button>
           )}
           {!aiReview && !aiError && (
             <EmptyState
@@ -1134,6 +1250,58 @@ export function App() {
           </a>
         </div>
       </footer>
+      <AnimatePresence>
+        {diagnosticsOpen && (
+          <Modal
+            title="CORS Doctor"
+            icon={<Activity className="h-5 w-5 text-signal-amber" />}
+            onClose={() => setDiagnosticsOpen(false)}
+          >
+            <div className="space-y-3">
+              {diagnostics.length === 0 ? (
+                <EmptyState
+                  icon={<Network className="h-5 w-5" />}
+                  title="No diagnostics yet"
+                  body="Run a browser compatibility probe before sending review context."
+                />
+              ) : (
+                diagnostics.map((row) => (
+                  <div key={row.label} className="flex gap-3 rounded-lg border border-white/10 bg-white/[0.04] p-3">
+                    <StatusIcon status={row.status} />
+                    <div>
+                      <p className="font-medium text-white">{row.label}</p>
+                      <p className="mt-1 text-sm leading-6 text-slate-400">{row.detail}</p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="mt-5 rounded-lg border border-white/10 bg-white/[0.04] p-4 text-sm leading-6 text-slate-400">
+              If CORS fails, the endpoint may still be valid. A fully client-side app cannot
+              bypass browser CORS policy or proxy requests, so use a browser-compatible endpoint,
+              enable CORS on your local server, or choose another provider.
+            </div>
+          </Modal>
+        )}
+        {aiErrorOpen && aiError && (
+          <Modal
+            title="AI Review Error"
+            icon={<AlertTriangle className="h-5 w-5 text-signal-rose" />}
+            onClose={() => setAiErrorOpen(false)}
+          >
+            <div className="rounded-lg border border-signal-rose/30 bg-signal-rose/10 p-4">
+              <p className="text-sm font-semibold text-rose-100">Provider request failed</p>
+              <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap rounded-lg bg-ink-950 p-4 text-xs leading-6 text-slate-300">
+                {aiError}
+              </pre>
+            </div>
+            <p className="mt-4 text-sm leading-6 text-slate-400">
+              Check endpoint mode, model id, API key permissions, provider CORS policy, and whether
+              the provider supports browser-origin requests.
+            </p>
+          </Modal>
+        )}
+      </AnimatePresence>
     </main>
   );
 }
