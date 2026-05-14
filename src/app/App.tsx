@@ -225,6 +225,22 @@ function validateAiReviewShape(value: unknown): value is AiReviewShape {
   return hasSummary && (hasScore || hasKnownList);
 }
 
+function normalizeAiReviewShape(review: AiReviewShape): AiReviewShape {
+  const summary = review.summary?.trim();
+  if (!summary?.startsWith("{")) return review;
+
+  const nested = parseStructuredResponse<AiReviewShape>(summary);
+  if (!nested.success || !nested.data || typeof nested.data.summary !== "string") {
+    return review;
+  }
+
+  return {
+    ...nested.data,
+    ...review,
+    summary: nested.data.summary,
+  };
+}
+
 function extractModelIds(raw: unknown): string[] {
   const source = raw as {
     data?: Array<{ id?: unknown; name?: unknown; model?: unknown }>;
@@ -245,8 +261,11 @@ function extractModelIds(raw: unknown): string[] {
 }
 
 function providerErrorMessage(raw: unknown, fallback: string): string {
-  const body = raw as { error?: { message?: unknown }; message?: unknown };
-  if (typeof body?.error?.message === "string") return body.error.message;
+  const body = raw as { error?: { message?: unknown } | string; message?: unknown };
+  if (typeof body?.error === "string") return body.error;
+  if (typeof body?.error === "object" && typeof body.error?.message === "string") {
+    return body.error.message;
+  }
   if (typeof body?.message === "string") return body.message;
   return fallback;
 }
@@ -771,9 +790,13 @@ export function App() {
       const parsed = response.data
         ? { success: true, data: response.data, raw: response.text }
         : parseStructuredResponse<AiReviewShape>(response.text);
-      const parsedOk = parsed.success && validateAiReviewShape(parsed.data);
+      const normalizedData =
+        parsed.success && validateAiReviewShape(parsed.data)
+          ? normalizeAiReviewShape(parsed.data)
+          : undefined;
+      const parsedOk = Boolean(normalizedData);
       setAiReview({
-        parsed: parsedOk ? parsed.data : undefined,
+        parsed: normalizedData,
         raw: response.text || JSON.stringify(response.raw, null, 2),
         endpoint: response.endpointUsed,
         parsedOk,

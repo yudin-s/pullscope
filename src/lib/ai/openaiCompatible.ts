@@ -49,13 +49,45 @@ function safeParseJSON<T>(input: string): T | undefined {
 }
 
 interface RawChatBody {
-  choices?: Array<{ message?: { content?: string } }>;
+  choices?: Array<{
+    message?: {
+      content?: string | Array<{ type?: string; text?: string }>;
+    };
+  }>;
 }
 
 const reviewJsonSchema = {
   name: "pullscope_review",
   schema: {
     type: "object",
+    properties: {
+      combinedRiskScore: { type: "number" },
+      overallRiskScore: { type: "number" },
+      summary: { type: "string" },
+      localSignals: { type: "array", items: { type: "string" } },
+      aiFindings: { type: "array", items: { type: "string" } },
+      criticalFindings: { type: "array", items: { type: "string" } },
+      recommendations: { type: "array", items: { type: "string" } },
+      securityConcerns: { type: "array", items: { type: "string" } },
+      reliabilityConcerns: { type: "array", items: { type: "string" } },
+      maintainabilityConcerns: { type: "array", items: { type: "string" } },
+      testSuggestions: { type: "array", items: { type: "string" } },
+      reviewComments: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            file: { type: "string" },
+            severity: { type: "string" },
+            comment: { type: "string" },
+          },
+          additionalProperties: true,
+        },
+      },
+      codexPrompt: { type: "string" },
+      mergeRecommendation: { type: "string" },
+    },
+    required: ["summary", "mergeRecommendation", "recommendations"],
     additionalProperties: true,
   },
   strict: false,
@@ -147,16 +179,28 @@ function extractTextFromResponses(raw: RawResponsesBody): string {
 function extractTextFromChat(raw: RawChatBody): string {
   const first = raw.choices?.[0];
   const content = first?.message?.content;
-  return typeof content === "string" ? content : "";
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => (typeof part?.text === "string" ? part.text : ""))
+      .filter(Boolean)
+      .join("\n");
+  }
+  return "";
 }
 
 function extractProviderError(raw: Record<string, unknown>, fallback: string): string {
   if (typeof raw.error === "object" && raw.error && "message" in raw.error) {
     return String((raw.error as { message?: unknown }).message);
   }
+  if (typeof raw.error === "string") return raw.error;
   if (typeof raw.message === "string") return raw.message;
   if (typeof raw.rawText === "string") return raw.rawText;
   return fallback;
+}
+
+function hasProviderError(raw: Record<string, unknown>): boolean {
+  return Boolean(raw.error || raw.message);
 }
 
 async function readJsonOrText(response: Response): Promise<unknown> {
@@ -241,22 +285,26 @@ export async function callOpenAICompatible<T = unknown>(
       );
 
       const raw = (await readJsonOrText(response)) as Record<string, unknown>;
-      if (response.status < 500 && response.ok) {
+      const providerError = hasProviderError(raw);
+      if (response.status < 500 && response.ok && !providerError) {
         const text = extractTextFromResponses(raw as RawResponsesBody);
-        return {
-          text,
-          endpointUsed: "responses",
-          status: response.status,
-          raw,
-          data:
-            opts.responseFormat === "json_object"
-              ? (safeParseJSON<T>(text) as T | undefined)
-              : undefined,
-        };
+        if (text.trim()) {
+          return {
+            text,
+            endpointUsed: "responses",
+            status: response.status,
+            raw,
+            data:
+              opts.responseFormat === "json_object"
+                ? (safeParseJSON<T>(text) as T | undefined)
+                : undefined,
+          };
+        }
       }
 
       const shouldFallbackToChat =
-        config.endpointMode === "auto" && [400, 404, 405, 422].includes(response.status);
+        config.endpointMode === "auto" &&
+        (providerError || [400, 404, 405, 422].includes(response.status));
       if (!shouldFallbackToChat) {
         throw new Error(extractProviderError(raw, `Responses endpoint error: ${response.status}`));
       }

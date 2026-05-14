@@ -33,6 +33,7 @@ describe("callOpenAICompatible", () => {
       type: "json_schema",
       name: "pullscope_review",
     });
+    expect(body.text.format.schema.required).toContain("summary");
   });
 
   it("uses response_format.type json_schema for schema-capable chat providers", async () => {
@@ -128,6 +129,37 @@ describe("callOpenAICompatible", () => {
       type: "json_schema",
       json_schema: { name: "pullscope_review" },
     });
+    expect(body.response_format.json_schema.schema.properties.summary).toEqual({ type: "string" });
+    expect(body.response_format.json_schema.schema.required).toContain("recommendations");
+  });
+
+  it("uses chat completions by default for LM Studio auto mode", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: '{"summary":"ok"}' } }],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await callOpenAICompatible({
+      provider: {
+        id: "lmstudio",
+        endpointMode: "auto",
+      },
+      messages: [{ role: "user", content: "Review this." }],
+      responseFormat: "json_object",
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const firstCall = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(String(firstCall[0])).toContain("/v1/chat/completions");
+    expect(response.endpointUsed).toBe("chat_completions");
   });
 
   it("falls back from unsupported Responses API to chat completions in auto mode", async () => {
@@ -166,6 +198,71 @@ describe("callOpenAICompatible", () => {
     expect(String(fetchMock.mock.calls[0][0])).toContain("/api/v1/responses");
     expect(String(fetchMock.mock.calls[1][0])).toContain("/api/v1/chat/completions");
     expect(response.endpointUsed).toBe("chat_completions");
+  });
+
+  it("falls back when a Responses API endpoint returns an error body with HTTP 200", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: "Unexpected endpoint or method. (POST /v1/responses)" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: '{"summary":"ok"}' } }],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }
+        )
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await callOpenAICompatible({
+      provider: {
+        id: "openrouter",
+        apiKey: "test-key",
+        endpointMode: "auto",
+      },
+      messages: [{ role: "user", content: "Review this." }],
+      responseFormat: "json_object",
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(response.endpointUsed).toBe("chat_completions");
+    expect(response.text).toBe('{"summary":"ok"}');
+  });
+
+  it("extracts chat text from content part arrays", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: [{ type: "text", text: '{"summary":"ok"}' }] } }],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await callOpenAICompatible({
+      provider: {
+        id: "custom",
+        baseUrl: "https://example.test",
+        apiKey: "test-key",
+        endpointMode: "chat_completions",
+      },
+      messages: [{ role: "user", content: "Review this." }],
+      responseFormat: "text",
+    });
+
+    expect(response.text).toBe('{"summary":"ok"}');
   });
 
   it("retries with json_schema when a chat provider rejects json_object format", async () => {
@@ -213,9 +310,10 @@ describe("callOpenAICompatible", () => {
 
     expect(firstRequestBody.response_format.type).toBe("json_object");
     expect(secondRequestBody.response_format.type).toBe("json_schema");
-    expect(secondRequestBody.response_format.json_schema.schema).toEqual({
+    expect(secondRequestBody.response_format.json_schema.schema).toMatchObject({
       type: "object",
       additionalProperties: true,
+      properties: { summary: { type: "string" } },
     });
     expect(response.text).toBe('{"summary":"ok"}');
     expect(response.data).toEqual({ summary: "ok" });

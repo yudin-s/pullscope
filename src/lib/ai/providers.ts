@@ -113,9 +113,9 @@ const providerPresets: ProviderPreset[] = [
     responsesPath: "/v1/responses",
     modelListPath: "/v1/models",
     suggestedModels: ["local-model", "openai/gpt-oss-20b"],
-    supportsResponses: true,
+    supportsResponses: false,
     auth: { needsApiKey: false },
-    note: "Model ids come from the currently loaded LM Studio model; structured output uses JSON Schema.",
+    note: "Model ids come from the currently loaded LM Studio model. Auto mode uses Chat Completions because some LM Studio versions return an error body for /v1/responses.",
   },
   {
     id: "custom",
