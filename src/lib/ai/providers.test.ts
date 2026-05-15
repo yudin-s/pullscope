@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { buildProviderHeaders } from "./providers";
+import { buildProviderHeaders, getProviderPresets } from "./providers";
+
+describe("provider presets", () => {
+  it("puts Chrome AI first as the default browser-native option", () => {
+    const presets = getProviderPresets();
+
+    expect(presets[0]).toMatchObject({
+      id: "chromeai",
+      runtime: "browser",
+      auth: { needsApiKey: false },
+    });
+  });
+});
 
 describe("buildProviderHeaders", () => {
   it("keeps Content-Type and Authorization Bearer for providers that need key", () => {

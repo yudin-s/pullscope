@@ -1,9 +1,9 @@
 export type ProviderId =
+  | "chromeai"
   | "openai"
   | "groq"
   | "ollama"
   | "lmstudio"
-  | "chromeai"
   | "custom";
 
 export interface ProviderAuth {
@@ -43,6 +43,20 @@ export interface ProviderSelection {
 }
 
 const providerPresets: ProviderPreset[] = [
+  {
+    id: "chromeai",
+    name: "Chrome AI",
+    defaultBaseUrl: "browser://chrome-ai",
+    defaultModel: "Gemini Nano",
+    chatCompletionsPath: "",
+    responsesPath: "",
+    modelListPath: "",
+    suggestedModels: ["Gemini Nano"],
+    supportsResponses: false,
+    auth: { needsApiKey: false },
+    runtime: "browser",
+    note: "Uses Chrome's built-in LanguageModel API when Gemini Nano is available on this device. No API key, no provider endpoint, and no PullScope backend.",
+  },
   {
     id: "openai",
     name: "OpenAI",
@@ -102,20 +116,6 @@ const providerPresets: ProviderPreset[] = [
     auth: { needsApiKey: false },
     runtime: "http",
     note: "Model ids come from the currently loaded LM Studio model. Auto mode uses Chat Completions because some LM Studio versions return an error body for /v1/responses.",
-  },
-  {
-    id: "chromeai",
-    name: "Chrome AI",
-    defaultBaseUrl: "browser://chrome-ai",
-    defaultModel: "Gemini Nano",
-    chatCompletionsPath: "",
-    responsesPath: "",
-    modelListPath: "",
-    suggestedModels: ["Gemini Nano"],
-    supportsResponses: false,
-    auth: { needsApiKey: false },
-    runtime: "browser",
-    note: "Uses Chrome's built-in LanguageModel API when Gemini Nano is available on this device. No API key, no provider endpoint, and no PullScope backend.",
   },
   {
     id: "custom",

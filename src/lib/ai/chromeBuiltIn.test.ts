@@ -16,6 +16,25 @@ describe("Chrome built-in AI provider", () => {
     const rows = await probeChromeBuiltInAI();
 
     expect(rows.some((row) => row.label === "LanguageModel API" && row.status === "fail")).toBe(true);
+    const languageModelRow = rows.find((row) => row.label === "LanguageModel API");
+    expect(languageModelRow?.help?.join(" ")).toContain("Prompt API for Gemini Nano");
+    expect(languageModelRow?.links?.some((link) => link.href.includes("prompt-api-for-gemini-nano"))).toBe(true);
+  });
+
+  it("adds actionable download guidance when Gemini Nano is downloadable", async () => {
+    vi.stubGlobal("window", {});
+    vi.stubGlobal("navigator", { userActivation: { hasBeenActive: true }, gpu: {} });
+    vi.stubGlobal("LanguageModel", {
+      availability: vi.fn(async () => "downloadable"),
+      create: vi.fn(),
+    });
+
+    const rows = await probeChromeBuiltInAI();
+    const availabilityRow = rows.find((row) => row.label === "Gemini Nano availability");
+
+    expect(availabilityRow?.status).toBe("warn");
+    expect(availabilityRow?.help?.join(" ")).toContain("download");
+    expect(availabilityRow?.links?.some((link) => link.href === "chrome://on-device-internals")).toBe(true);
   });
 
   it("calls Chrome LanguageModel and parses JSON output", async () => {

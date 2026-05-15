@@ -82,9 +82,16 @@ interface AiReviewResult {
 }
 
 interface DiagnosticRow {
+  id?: string;
   label: string;
   status: "pass" | "warn" | "fail" | "pending";
   detail: string;
+  help?: string[];
+  links?: Array<{
+    label: string;
+    href: string;
+    description?: string;
+  }>;
 }
 
 const samplePrUrl = "https://github.com/vercel/next.js/pull/70568";
@@ -279,6 +286,99 @@ function StatusIcon({ status }: { status: DiagnosticRow["status"] }) {
   return <Loader2 className="h-4 w-4 animate-spin text-signal-cyan" />;
 }
 
+function diagnosticKey(row: DiagnosticRow) {
+  return row.id ?? `${row.label}-${row.detail}`;
+}
+
+function DiagnosticItem({
+  row,
+  expanded,
+  onToggle,
+  compact = false,
+}: {
+  row: DiagnosticRow;
+  expanded: boolean;
+  onToggle: () => void;
+  compact?: boolean;
+}) {
+  const hasDetails = Boolean(row.help?.length || row.links?.length);
+  const content = (
+    <div className="flex items-start gap-3 text-left">
+      <StatusIcon status={row.status} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center justify-between gap-3">
+          <p className={clsx(compact ? "text-sm" : "font-medium", "font-semibold text-white")}>
+            {row.label}
+          </p>
+          {hasDetails && (
+            <span className="shrink-0 text-xs font-semibold text-signal-cyan">
+              {expanded ? "Hide tips" : "Tips"}
+            </span>
+          )}
+        </div>
+        <p className={clsx("mt-1 leading-5 text-slate-400", compact ? "text-xs" : "text-sm")}>
+          {row.detail}
+        </p>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="rounded-lg border border-white/10 bg-white/[0.04]">
+      {hasDetails ? (
+        <button
+          type="button"
+          aria-expanded={expanded}
+          onClick={onToggle}
+          className="block w-full p-3"
+        >
+          {content}
+        </button>
+      ) : (
+        <div className="p-3">{content}</div>
+      )}
+      {hasDetails && expanded && (
+        <div className="border-t border-white/10 px-3 pb-3 pt-3">
+          {row.help && row.help.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold uppercase text-slate-500">What to try</p>
+              <ul className="mt-2 space-y-2 text-sm leading-6 text-slate-300">
+                {row.help.map((item) => (
+                  <li key={item}>- {item}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {row.links && row.links.length > 0 && (
+            <div className={clsx(row.help?.length && "mt-4")}>
+              <p className="text-xs font-semibold uppercase text-slate-500">Useful links</p>
+              <div className="mt-2 grid gap-2">
+                {row.links.map((link) => (
+                  <a
+                    key={link.href}
+                    href={link.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="rounded-lg border border-white/10 bg-ink-950/45 p-3 text-sm text-white hover:bg-white/10"
+                  >
+                    <span className="font-semibold">{link.label}</span>
+                    <span className="mt-1 block break-all text-xs text-slate-500">{link.href}</span>
+                    {link.description && (
+                      <span className="mt-1 block text-xs leading-5 text-slate-400">
+                        {link.description}
+                      </span>
+                    )}
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function HelpTooltip({ label }: { label: string }) {
   return (
     <span className="group relative inline-flex">
@@ -415,7 +515,7 @@ export function App() {
   const [isPrivatePr, setIsPrivatePr] = useState(false);
   const [githubToken, setGithubToken] = useState("");
 
-  const [providerId, setProviderId] = useState<ProviderId>("openai");
+  const [providerId, setProviderId] = useState<ProviderId>("chromeai");
   const selectedPreset = getProviderPreset(providerId);
   const [aiPowerEnabled, setAiPowerEnabled] = useState(false);
   const [baseUrl, setBaseUrl] = useState(selectedPreset.defaultBaseUrl);
@@ -431,6 +531,7 @@ export function App() {
   const [profileStorage, setProfileStorage] = useState<StorageScope>("memory");
   const saveProfile = profileStorage !== "memory";
   const [diagnostics, setDiagnostics] = useState<DiagnosticRow[]>([]);
+  const [expandedDiagnosticId, setExpandedDiagnosticId] = useState<string | null>(null);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [doctorRunning, setDoctorRunning] = useState(false);
   const [aiRunning, setAiRunning] = useState(false);
@@ -482,6 +583,7 @@ export function App() {
     setCustomAuthHeaderValue("");
     setProviderApiKeyInMemory(nextId, undefined);
     setDiagnostics([]);
+    setExpandedDiagnosticId(null);
     setDiagnosticsOpen(false);
     setAiReview(null);
   }
@@ -576,6 +678,7 @@ export function App() {
 
     setDoctorRunning(true);
     setDiagnosticsOpen(true);
+    setExpandedDiagnosticId(null);
     setDiagnostics([{ label: "URL syntax", status: "pending", detail: "Checking base URL." }]);
     const rows: DiagnosticRow[] = [];
 
@@ -739,6 +842,7 @@ export function App() {
   async function runChromeAiDoctor() {
     setDoctorRunning(true);
     setDiagnosticsOpen(false);
+    setExpandedDiagnosticId(null);
     setDiagnostics([
       {
         label: "Chrome AI detection",
@@ -917,13 +1021,30 @@ export function App() {
                   type="button"
                   onClick={() => selectPreset(preset.id)}
                   className={clsx(
-                    "rounded-lg border px-3 py-3 text-left text-sm transition",
-                    preset.id === providerId
-                      ? "border-signal-cyan bg-signal-cyan/10 text-white"
-                      : "border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/10",
+                    "relative rounded-lg border px-3 py-3 text-left text-sm transition",
+                    preset.id === providerId && preset.id === "chromeai"
+                      ? "border-signal-lime/70 bg-signal-lime/15 text-white shadow-glow ring-1 ring-signal-lime/50"
+                      : preset.id === providerId
+                        ? "border-signal-cyan bg-signal-cyan/10 text-white"
+                        : "border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/10",
                   )}
                 >
-                  <span className="block font-semibold">{preset.name}</span>
+                  {preset.id === "chromeai" && (
+                    <span
+                      className={clsx(
+                        "absolute right-3 top-3 inline-flex h-5 w-9 items-center rounded-full transition",
+                        preset.id === providerId ? "bg-signal-lime/80" : "bg-slate-700",
+                      )}
+                    >
+                      <span
+                        className={clsx(
+                          "h-4 w-4 rounded-full bg-white shadow transition",
+                          preset.id === providerId ? "translate-x-4" : "translate-x-0.5",
+                        )}
+                      />
+                    </span>
+                  )}
+                  <span className="block pr-12 font-semibold">{preset.name}</span>
                   <span className="mt-1 block text-xs text-slate-500">
                     {preset.runtime === "browser"
                       ? "Browser local"
@@ -959,15 +1080,17 @@ export function App() {
                     </p>
                   ) : (
                     diagnostics.map((row) => (
-                      <div key={`${row.label}-${row.detail}`} className="rounded-lg border border-white/10 bg-ink-950/35 p-3">
-                        <div className="flex items-start gap-3">
-                          <StatusIcon status={row.status} />
-                          <div>
-                            <p className="text-sm font-semibold text-white">{row.label}</p>
-                            <p className="mt-1 text-xs leading-5 text-slate-400">{row.detail}</p>
-                          </div>
-                        </div>
-                      </div>
+                      <DiagnosticItem
+                        key={diagnosticKey(row)}
+                        row={row}
+                        compact
+                        expanded={expandedDiagnosticId === diagnosticKey(row)}
+                        onToggle={() =>
+                          setExpandedDiagnosticId((current) =>
+                            current === diagnosticKey(row) ? null : diagnosticKey(row),
+                          )
+                        }
+                      />
                     ))
                   )}
                 </div>
@@ -1476,13 +1599,16 @@ export function App() {
                 />
               ) : (
                 diagnostics.map((row) => (
-                  <div key={row.label} className="flex gap-3 rounded-lg border border-white/10 bg-white/[0.04] p-3">
-                    <StatusIcon status={row.status} />
-                    <div>
-                      <p className="font-medium text-white">{row.label}</p>
-                      <p className="mt-1 text-sm leading-6 text-slate-400">{row.detail}</p>
-                    </div>
-                  </div>
+                  <DiagnosticItem
+                    key={diagnosticKey(row)}
+                    row={row}
+                    expanded={expandedDiagnosticId === diagnosticKey(row)}
+                    onToggle={() =>
+                      setExpandedDiagnosticId((current) =>
+                        current === diagnosticKey(row) ? null : diagnosticKey(row),
+                      )
+                    }
+                  />
                 ))
               )}
             </div>
