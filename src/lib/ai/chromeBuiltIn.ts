@@ -6,6 +6,11 @@ import {
 
 type ChromeAiAvailability = "unavailable" | "downloadable" | "downloading" | "available";
 
+interface ChromeDownloadProgress {
+  loaded?: number;
+  total?: number;
+}
+
 interface ChromeLanguageModelSession {
   prompt(input: string, options?: { signal?: AbortSignal }): Promise<string>;
   destroy?: () => void;
@@ -92,6 +97,34 @@ function safeParseJSON<T>(input: string): T | undefined {
   } catch {
     return undefined;
   }
+}
+
+function progressDetail(progress?: ChromeDownloadProgress) {
+  if (
+    typeof progress?.loaded === "number" &&
+    typeof progress?.total === "number" &&
+    progress.total > 0
+  ) {
+    return `Chrome is downloading Gemini Nano: ${Math.round((progress.loaded / progress.total) * 100)}%.`;
+  }
+  return "Chrome is preparing or downloading Gemini Nano. Keep this tab open.";
+}
+
+function withDownloadMonitor(
+  onProgress?: (progress: ChromeDownloadProgress) => void
+) {
+  return {
+    ...languageOptions(),
+    monitor(monitor: EventTarget) {
+      monitor.addEventListener("downloadprogress", (event) => {
+        const progress = event as Event & ChromeDownloadProgress;
+        onProgress?.({
+          loaded: typeof progress.loaded === "number" ? progress.loaded : undefined,
+          total: typeof progress.total === "number" ? progress.total : undefined,
+        });
+      });
+    },
+  };
 }
 
 function browserCapabilityRows(): ChromeAiDiagnosticRow[] {
@@ -279,6 +312,93 @@ export async function probeChromeBuiltInAI(): Promise<ChromeAiDiagnosticRow[]> {
   return rows;
 }
 
+export async function prepareChromeBuiltInAI(
+  onProgress?: (row: ChromeAiDiagnosticRow) => void
+): Promise<ChromeAiDiagnosticRow[]> {
+  const rows = await probeChromeBuiltInAI();
+  const api = languageModelApi();
+  const availability = rows.find((row) => row.id === "gemini-nano-availability");
+
+  if (!api || availability?.status === "fail") {
+    return rows;
+  }
+
+  if (availability?.detail.includes("ready")) {
+    return rows;
+  }
+
+  onProgress?.({
+    id: "model-download",
+    label: "Model preparation",
+    status: "pending",
+    detail: "Starting Chrome's model preparation. This can take a while on the first run.",
+    help: [
+      "Chrome owns the model download and cache. Keep this tab open and avoid metered connections.",
+      "If this remains stuck, restart Chrome and inspect chrome://on-device-internals.",
+    ],
+    links: [chromeBuiltInAiLinks.internals, chromeBuiltInAiLinks.getStarted],
+  });
+
+  try {
+    const session = await api.create(
+      withDownloadMonitor((progress) => {
+        onProgress?.({
+          id: "model-download",
+          label: "Model preparation",
+          status: "pending",
+          detail: progressDetail(progress),
+          help: [
+            "The first model preparation can be slow because Chrome downloads browser-managed model files.",
+            "Subsequent use should not require a network connection once the model is available.",
+          ],
+          links: [chromeBuiltInAiLinks.internals, chromeBuiltInAiLinks.getStarted],
+        });
+      })
+    );
+    const result = await session.prompt("Reply with exactly: ok");
+    session.destroy?.();
+    return [
+      ...rows,
+      {
+        id: "model-download",
+        label: "Model preparation",
+        status: result.trim().length > 0 ? "pass" : "warn",
+        detail:
+          result.trim().length > 0
+            ? "Chrome AI model is prepared and responded to a local prompt."
+            : "Chrome prepared a session, but the local prompt returned empty text.",
+        help:
+          result.trim().length > 0
+            ? ["You can now run the combined PullScope review with Chrome AI."]
+            : [
+                "Try running Chrome AI Doctor again.",
+                "If this repeats, check chrome://on-device-internals for model errors.",
+              ],
+        links: [chromeBuiltInAiLinks.internals, chromeBuiltInAiLinks.promptApi],
+      },
+    ];
+  } catch (error) {
+    return [
+      ...rows,
+      {
+        id: "model-download",
+        label: "Model preparation",
+        status: "fail",
+        detail: String((error as Error)?.message ?? error),
+        help: [
+          "Confirm Chrome flags are enabled, relaunch Chrome, and retry from a focused tab.",
+          "Open chrome://on-device-internals and check the Model Status tab for download or policy errors.",
+        ],
+        links: [
+          chromeBuiltInAiLinks.internals,
+          chromeBuiltInAiLinks.flagsOptimization,
+          chromeBuiltInAiLinks.flagsPrompt,
+        ],
+      },
+    ];
+  }
+}
+
 export async function callChromeBuiltInAI<T = unknown>(
   opts: OpenAICompatibleOptions
 ): Promise<OpenAICompatibleResponse<T>> {
@@ -291,18 +411,14 @@ export async function callChromeBuiltInAI<T = unknown>(
   if (availability === "unavailable") {
     throw new Error("Chrome AI is unavailable on this device or browser profile.");
   }
+  if (availability === "downloadable") {
+    throw new Error("Chrome AI model is not downloaded yet. Click Prepare Chrome AI model first, then run the review.");
+  }
   if (availability === "downloading") {
-    throw new Error("Chrome AI model is still downloading. Try again after the download completes.");
+    throw new Error("Chrome AI model is still downloading. Keep Chrome open and try again after the download completes.");
   }
 
-  const session = await api.create({
-    ...languageOptions(),
-    monitor(monitor: EventTarget) {
-      monitor.addEventListener("downloadprogress", () => {
-        // Chrome owns the model download; the doctor reports availability before review runs.
-      });
-    },
-  });
+  const session = await api.create(languageOptions());
 
   try {
     const text = await session.prompt(messagesToPrompt(opts.messages), {

@@ -29,7 +29,7 @@ import { fetchPrData } from "../lib/github/githubClient";
 import { PullRequestData } from "../lib/github/types";
 import { checkEndpointReachability } from "../lib/ai/corsDoctor";
 import { callAiProvider } from "../lib/ai/callAiProvider";
-import { probeChromeBuiltInAI } from "../lib/ai/chromeBuiltIn";
+import { prepareChromeBuiltInAI, probeChromeBuiltInAI } from "../lib/ai/chromeBuiltIn";
 import { callOpenAICompatible } from "../lib/ai/openaiCompatible";
 import { buildRiskPrompt } from "../lib/ai/promptBuilder";
 import {
@@ -354,21 +354,42 @@ function DiagnosticItem({
               <p className="text-xs font-semibold uppercase text-slate-500">Useful links</p>
               <div className="mt-2 grid gap-2">
                 {row.links.map((link) => (
-                  <a
-                    key={link.href}
-                    href={link.href}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="rounded-lg border border-white/10 bg-ink-950/45 p-3 text-sm text-white hover:bg-white/10"
-                  >
-                    <span className="font-semibold">{link.label}</span>
-                    <span className="mt-1 block break-all text-xs text-slate-500">{link.href}</span>
-                    {link.description && (
-                      <span className="mt-1 block text-xs leading-5 text-slate-400">
-                        {link.description}
+                  link.href.startsWith("chrome://") ? (
+                    <button
+                      key={link.href}
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void copyToClipboard(link.href);
+                      }}
+                      className="rounded-lg border border-white/10 bg-ink-950/45 p-3 text-left text-sm text-white hover:bg-white/10"
+                    >
+                      <span className="font-semibold">{link.label}</span>
+                      <span className="mt-1 block break-all text-xs text-slate-500">{link.href}</span>
+                      <span className="mt-1 block text-xs font-semibold text-signal-cyan">
+                        Copy Chrome URL
                       </span>
-                    )}
-                  </a>
+                      <span className="mt-1 block text-xs leading-5 text-slate-400">
+                        {link.description ?? "Chrome blocks web pages from opening chrome:// URLs directly. Copy this URL and paste it into Chrome's address bar."}
+                      </span>
+                    </button>
+                  ) : (
+                    <a
+                      key={link.href}
+                      href={link.href}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-lg border border-white/10 bg-ink-950/45 p-3 text-sm text-white hover:bg-white/10"
+                    >
+                      <span className="font-semibold">{link.label}</span>
+                      <span className="mt-1 block break-all text-xs text-slate-500">{link.href}</span>
+                      {link.description && (
+                        <span className="mt-1 block text-xs leading-5 text-slate-400">
+                          {link.description}
+                        </span>
+                      )}
+                    </a>
+                  )
                 ))}
               </div>
             </div>
@@ -534,6 +555,7 @@ export function App() {
   const [expandedDiagnosticId, setExpandedDiagnosticId] = useState<string | null>(null);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [doctorRunning, setDoctorRunning] = useState(false);
+  const [chromePreparing, setChromePreparing] = useState(false);
   const [aiRunning, setAiRunning] = useState(false);
   const [aiError, setAiError] = useState("");
   const [aiErrorOpen, setAiErrorOpen] = useState(false);
@@ -866,6 +888,51 @@ export function App() {
     }
   }
 
+  async function prepareChromeAiModel() {
+    setChromePreparing(true);
+    setDiagnosticsOpen(false);
+    setExpandedDiagnosticId(null);
+    setDiagnostics([
+      {
+        id: "model-download",
+        label: "Model preparation",
+        status: "pending",
+        detail: "Checking whether Chrome can prepare Gemini Nano.",
+      },
+    ]);
+    try {
+      const rows = await prepareChromeBuiltInAI((row) => {
+        setDiagnostics((current) => [
+          ...current.filter((item) => diagnosticKey(item) !== diagnosticKey(row)),
+          row,
+        ]);
+      });
+      setDiagnostics(rows);
+    } catch (err) {
+      setDiagnostics([
+        {
+          id: "model-download",
+          label: "Model preparation",
+          status: "fail",
+          detail: String((err as Error)?.message ?? err),
+          help: [
+            "Restart Chrome after enabling flags.",
+            "Open chrome://on-device-internals and check the Model Status tab.",
+          ],
+          links: [
+            {
+              label: "Open on-device internals",
+              href: "chrome://on-device-internals",
+              description: "Copy and paste this internal Chrome URL into the address bar.",
+            },
+          ],
+        },
+      ]);
+    } finally {
+      setChromePreparing(false);
+    }
+  }
+
   async function refreshModelList() {
     if (isChromeAiProvider) {
       setModelLoadState("idle");
@@ -1071,6 +1138,15 @@ export function App() {
                   >
                     {doctorRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Network className="h-4 w-4" />}
                     Chrome AI Doctor
+                  </button>
+                  <button
+                    type="button"
+                    onClick={prepareChromeAiModel}
+                    disabled={chromePreparing}
+                    className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-sm font-semibold text-white hover:bg-white/10 disabled:opacity-60"
+                  >
+                    {chromePreparing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                    Prepare model
                   </button>
                 </div>
                 <div className="mt-4 space-y-2">
@@ -1303,6 +1379,10 @@ export function App() {
 
       <section className="mx-auto grid max-w-7xl gap-8 px-5 py-10 lg:grid-cols-[1.05fr_0.95fr] lg:py-14">
         <div className="flex flex-col justify-center">
+          <div className="mb-3 inline-flex w-fit items-center gap-2 rounded-full border border-signal-cyan/30 bg-signal-cyan/10 px-3 py-1 text-sm text-signal-cyan">
+            <Sparkles className="h-4 w-4" />
+            Chrome AI Ready
+          </div>
           <div className="mb-5 inline-flex w-fit items-center gap-2 rounded-full border border-signal-lime/30 bg-signal-lime/10 px-3 py-1 text-sm text-signal-lime">
             <ShieldCheck className="h-4 w-4" />
             Zero-backend GitHub Pages devtool

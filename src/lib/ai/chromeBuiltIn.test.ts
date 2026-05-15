@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { callAiProvider } from "./callAiProvider";
 import { callOpenAICompatible } from "./openaiCompatible";
-import { callChromeBuiltInAI, probeChromeBuiltInAI } from "./chromeBuiltIn";
+import { callChromeBuiltInAI, prepareChromeBuiltInAI, probeChromeBuiltInAI } from "./chromeBuiltIn";
 
 describe("Chrome built-in AI provider", () => {
   afterEach(() => {
@@ -35,6 +35,41 @@ describe("Chrome built-in AI provider", () => {
     expect(availabilityRow?.status).toBe("warn");
     expect(availabilityRow?.help?.join(" ")).toContain("download");
     expect(availabilityRow?.links?.some((link) => link.href === "chrome://on-device-internals")).toBe(true);
+  });
+
+  it("prepares a downloadable Chrome AI model through create", async () => {
+    const prompt = vi.fn(async () => "ok");
+    const create = vi.fn(async () => ({ prompt }));
+    const progress = vi.fn();
+    vi.stubGlobal("window", {});
+    vi.stubGlobal("navigator", { userActivation: { hasBeenActive: true }, gpu: {} });
+    vi.stubGlobal("LanguageModel", {
+      availability: vi.fn(async () => "downloadable"),
+      create,
+    });
+
+    const rows = await prepareChromeBuiltInAI(progress);
+    const preparationRow = rows.find((row) => row.label === "Model preparation");
+
+    expect(create).toHaveBeenCalled();
+    expect(prompt).toHaveBeenCalledWith("Reply with exactly: ok");
+    expect(progress).toHaveBeenCalledWith(expect.objectContaining({ status: "pending" }));
+    expect(preparationRow?.status).toBe("pass");
+  });
+
+  it("does not hide model downloads behind review calls", async () => {
+    vi.stubGlobal("LanguageModel", {
+      availability: vi.fn(async () => "downloadable"),
+      create: vi.fn(),
+    });
+
+    await expect(
+      callChromeBuiltInAI({
+        provider: { id: "chromeai" },
+        messages: [{ role: "user", content: "Review this." }],
+        responseFormat: "text",
+      })
+    ).rejects.toThrow("Prepare Chrome AI model");
   });
 
   it("calls Chrome LanguageModel and parses JSON output", async () => {
