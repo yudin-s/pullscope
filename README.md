@@ -2,11 +2,32 @@
 
 Client-side AI PR review with your own model endpoint.
 
+<p>
+  <img alt="Google AI Ready" src="https://img.shields.io/badge/Google%20AI-Ready-34A853?style=for-the-badge&logo=google&logoColor=white">
+  <img alt="Gemini Nano Ready" src="https://img.shields.io/badge/Gemini%20Nano-Ready-8EA7FF?style=for-the-badge&logo=googlegemini&logoColor=white">
+  <img alt="Chrome Built-in AI" src="https://img.shields.io/badge/Chrome%20Built--in%20AI-LanguageModel-1A73E8?style=for-the-badge&logo=googlechrome&logoColor=white">
+  <img alt="Zero Backend" src="https://img.shields.io/badge/Zero%20Backend-GitHub%20Pages-22C55E?style=for-the-badge&logo=githubpages&logoColor=white">
+</p>
+
 [Live demo](https://yudin-s.github.io/pullscope/) · [Source](https://github.com/yudin-s/pullscope)
 
 PullScope is a zero-backend workbench for reviewing public GitHub pull requests. Paste a PR URL, inspect deterministic local risk signals, and optionally combine them with an AI review directly from your browser against an OpenAI-compatible endpoint.
 
 It is designed as a portfolio-grade open-source devtool: useful without login, static-hostable on GitHub Pages, security-aware, and polished enough to show real product engineering.
+
+## Chrome AI / Gemini Nano Ready
+
+PullScope is built to showcase browser-native AI on top of Chrome's built-in `LanguageModel` API and Gemini Nano availability checks.
+
+| Browser AI capability | PullScope support |
+| --- | --- |
+| Google AI / Chrome AI ready UX | Chrome AI is the first provider option and has a dedicated readiness flow. |
+| Gemini Nano readiness | PullScope can check availability, prepare the browser-managed model, and show download progress where Chrome exposes it. |
+| No API key path | Chrome AI runs through the browser runtime with no base URL, auth header, CORS setup, or model API key. |
+| Local-first review | Deterministic risk scoring always runs first, then Gemini Nano can add file-aware AI review context. |
+| Debuggable raw output | Chrome AI raw responses are shown in the UI fallback and logged to the browser console for inspection. |
+
+> PullScope is not affiliated with Google. Google, Chrome, Gemini, and Gemini Nano names are used only to describe compatibility with browser features exposed by Chrome.
 
 ## What It Does
 
@@ -16,6 +37,7 @@ It is designed as a portfolio-grade open-source devtool: useful without login, s
 - Highlights dependency, lockfile, infrastructure, security, test, large-diff, and many-file signals.
 - Shows reviewer persona notes for security, reliability, maintainability, and DX.
 - Includes demo data for rate-limit or offline demos.
+- Supports Chrome AI through the browser-native `LanguageModel` API when Gemini Nano is available.
 - Provides BYOK provider setup for OpenAI-compatible model endpoints.
 - Supports model switching through provider suggestions and browser-side `/models` refresh where CORS allows it.
 - Lets you choose automatic, Responses API, or Chat Completions endpoint routing.
