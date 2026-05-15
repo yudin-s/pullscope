@@ -1036,12 +1036,14 @@ export function App() {
     setAiErrorOpen(false);
     setAiReview(null);
     try {
+      const provider = currentProvider();
+      const isChromeAiReview = provider.id === "chromeai";
       const prompt = buildRiskPrompt(prData, risk, {
-        maxFiles: 12,
-        maxPatchCharsPerFile: 420,
+        maxFiles: isChromeAiReview ? 10 : 12,
+        maxPatchCharsPerFile: isChromeAiReview ? 2600 : 900,
+        maxTotalPatchChars: isChromeAiReview ? 14000 : 11000,
         includePersonaNotes: true,
       });
-      const provider = currentProvider();
       const response = await callAiProvider<AiReviewShape>({
         provider,
         messages: [
@@ -1053,8 +1055,8 @@ export function App() {
           { role: "user", content: prompt },
         ],
         responseFormat: "json_object",
-        timeoutMs: 25000,
-        maxTokens: 1200,
+        timeoutMs: isChromeAiReview ? 45000 : 25000,
+        maxTokens: isChromeAiReview ? 1800 : 1400,
       });
       const rawText = response.text || JSON.stringify(response.raw, null, 2);
       if (provider.id === "chromeai") {
@@ -1991,6 +1993,7 @@ function CombinedReviewPanel({
           </div>
           <ConcernList title="Local signals used" items={aiReview.parsed?.localSignals} />
           <ConcernList title="Model findings" items={aiReview.parsed?.aiFindings} />
+          <ConcernList title="File-specific review comments" items={aiReview.parsed?.reviewComments} />
           <ConcernList
             title="Critical findings"
             items={aiReview.parsed?.criticalFindings ?? aiReview.parsed?.securityConcerns}
