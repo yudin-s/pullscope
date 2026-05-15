@@ -552,6 +552,7 @@ export function App() {
   const [providerId, setProviderId] = useState<ProviderId>("chromeai");
   const selectedPreset = getProviderPreset(providerId);
   const [aiPowerEnabled, setAiPowerEnabled] = useState(false);
+  const [localReviewHover, setLocalReviewHover] = useState(false);
   const [baseUrl, setBaseUrl] = useState(selectedPreset.defaultBaseUrl);
   const [model, setModel] = useState(selectedPreset.defaultModel);
   const [fetchedModels, setFetchedModels] = useState<string[]>([]);
@@ -603,6 +604,10 @@ export function App() {
     if (profileStorage === "memory") return;
     persistModelProfile(profileStorage);
   }, [profileStorage, providerId, baseUrl, model, endpointMode]);
+
+  useEffect(() => {
+    if (aiReview || aiError) setLocalReviewHover(false);
+  }, [aiReview, aiError]);
 
   function selectPreset(nextId: ProviderId) {
     const nextPreset = getProviderPreset(nextId);
@@ -1035,6 +1040,7 @@ export function App() {
     setAiError("");
     setAiErrorOpen(false);
     setAiReview(null);
+    setLocalReviewHover(false);
     try {
       const provider = currentProvider();
       const isChromeAiReview = provider.id === "chromeai";
@@ -1125,6 +1131,8 @@ export function App() {
             aiPowerEnabled
               ? "border-signal-lime/50 bg-signal-lime/20 text-white shadow-glow"
               : "border-white/15 bg-white/[0.04] text-slate-300 hover:bg-white/10",
+            localReviewHover &&
+              "border-slate-200/45 bg-white/[0.07] text-white shadow-[0_0_24px_rgba(226,232,240,0.32)] ring-1 ring-slate-200/25",
           )}
         >
           <span className={clsx(
@@ -1406,7 +1414,7 @@ export function App() {
                 type="button"
                 onClick={runAiReview}
                 disabled={aiRunning}
-                className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/15 px-4 py-3 font-semibold text-white hover:bg-white/10 disabled:opacity-60"
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-signal-cyan/60 bg-signal-cyan px-4 py-3 font-semibold text-ink-950 shadow-[0_0_28px_rgba(34,211,238,0.28)] hover:bg-cyan-300 disabled:opacity-60"
               >
                 {aiRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
                 Run combined review
@@ -1474,7 +1482,7 @@ export function App() {
               href="#analyzer"
               className="inline-flex items-center justify-center gap-2 rounded-lg bg-white px-5 py-3 font-semibold text-ink-950 hover:bg-slate-200"
             >
-              Analyze a PR
+              Check PR
               <ArrowRight className="h-4 w-4" />
             </a>
             <a
@@ -1633,7 +1641,7 @@ export function App() {
                   className="inline-flex items-center justify-center gap-2 rounded-lg bg-signal-cyan px-4 py-3 font-semibold text-ink-950 disabled:opacity-60"
                 >
                   {loadState === "loading" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Github className="h-4 w-4" />}
-                  Analyze a PR
+                  Check PR
                 </button>
                 <button
                   type="button"
@@ -1678,6 +1686,7 @@ export function App() {
             aiReview={aiReview}
             aiError={aiError}
             onOpenAiError={() => setAiErrorOpen(true)}
+            onLocalReviewHoverChange={setLocalReviewHover}
           />
         </div>
       </section>
@@ -1732,7 +1741,7 @@ export function App() {
               href="#analyzer"
               className="inline-flex items-center justify-center gap-2 rounded-lg bg-signal-lime px-4 py-3 font-semibold text-ink-950"
             >
-              Analyze a PR
+              Check PR
               <ArrowRight className="h-4 w-4" />
             </a>
           </div>
@@ -1844,12 +1853,14 @@ function Dashboard({
   aiReview,
   aiError,
   onOpenAiError,
+  onLocalReviewHoverChange,
 }: {
   pr: PullRequestData;
   risk: RiskAssessment;
   aiReview: AiReviewResult | null;
   aiError: string;
   onOpenAiError: () => void;
+  onLocalReviewHoverChange: (hovered: boolean) => void;
 }) {
   const topFiles = [...risk.perFileScores].sort((a, b) => b.score - a.score).slice(0, 7);
   const activeReasons = risk.reasons.filter((reason) => !reason.label.toLowerCase().startsWith("no "));
@@ -1935,6 +1946,7 @@ function Dashboard({
         aiReview={aiReview}
         aiError={aiError}
         onOpenAiError={onOpenAiError}
+        onLocalReviewHoverChange={onLocalReviewHoverChange}
       />
     </div>
   );
@@ -1945,11 +1957,13 @@ function CombinedReviewPanel({
   aiReview,
   aiError,
   onOpenAiError,
+  onLocalReviewHoverChange,
 }: {
   risk: RiskAssessment;
   aiReview: AiReviewResult | null;
   aiError: string;
   onOpenAiError: () => void;
+  onLocalReviewHoverChange: (hovered: boolean) => void;
 }) {
   return (
     <div className="mt-6 border-t border-white/10 pt-5">
@@ -1968,11 +1982,16 @@ function CombinedReviewPanel({
         </button>
       )}
       {!aiReview && !aiError && (
-        <EmptyState
-          icon={<Bot className="h-5 w-5" />}
-          title="Local review is ready"
-          body="Local deterministic risk is always included; connect a model when you want a combined local+AI verdict."
-        />
+        <div
+          onMouseEnter={() => onLocalReviewHoverChange(true)}
+          onMouseLeave={() => onLocalReviewHoverChange(false)}
+        >
+          <EmptyState
+            icon={<Bot className="h-5 w-5" />}
+            title="Local review is ready"
+            body="Local deterministic risk is always included; connect a model when you want a combined local+AI verdict."
+          />
+        </div>
       )}
       {aiReview && (
         <div className="mt-5 space-y-4">
