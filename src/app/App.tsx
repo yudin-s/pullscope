@@ -982,7 +982,7 @@ export function App() {
           help: aborted
             ? [
                 "Run Prepare model again when you want to resume checking model readiness.",
-                "If Chrome continued downloading in the background, Chrome AI Doctor may show available later.",
+                "If Chrome continued downloading in the background, Check Availability may show available later.",
               ]
             : [
                 "Restart Chrome after enabling flags.",
@@ -1016,7 +1016,7 @@ export function App() {
         status: "warn",
         detail: "Model preparation was interrupted. Chrome may continue its own background model cache if it already started.",
         help: [
-          "Use Chrome AI Doctor to check current availability.",
+          "Use Check Availability to inspect the current Chrome AI runtime state.",
           "Open chrome://on-device-internals to inspect whether Chrome is still downloading or has cached the model.",
         ],
         links: [
@@ -1219,41 +1219,41 @@ export function App() {
             </div>
             {isChromeAiProvider ? (
               <div className="mt-5 rounded-lg border border-signal-cyan/25 bg-signal-cyan/10 p-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
+                <div className="flex flex-col gap-3">
+                  <div className="min-w-0">
                     <p className="font-semibold text-white">Chrome AI runtime</p>
                     <p className="mt-2 text-sm leading-6 text-slate-300">
                       Uses Chrome's built-in LanguageModel API directly in the browser. There is no API key,
                       base URL, auth header, or PullScope server in this path.
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={runDoctor}
-                    disabled={doctorRunning}
-                    className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-semibold text-ink-950 disabled:opacity-60"
-                  >
-                    {doctorRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Network className="h-4 w-4" />}
-                    Chrome AI Doctor
-                  </button>
-                  <div className="flex shrink-0 flex-wrap gap-2">
+                  <div className="grid gap-2">
+                    <button
+                      type="button"
+                      onClick={runDoctor}
+                      disabled={doctorRunning}
+                      className="inline-flex min-w-0 items-center justify-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-semibold text-ink-950 disabled:opacity-60"
+                    >
+                      {doctorRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Network className="h-4 w-4" />}
+                      <span className="truncate">Check Availability</span>
+                    </button>
                     <button
                       type="button"
                       onClick={prepareChromeAiModel}
                       disabled={chromePreparing}
-                      className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-sm font-semibold text-white hover:bg-white/10 disabled:opacity-60"
+                      className="inline-flex min-w-0 items-center justify-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-sm font-semibold text-white hover:bg-white/10 disabled:opacity-60"
                     >
                       {chromePreparing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                      Prepare model
+                      <span className="truncate">Prepare model</span>
                     </button>
                     {chromePreparing && (
                       <button
                         type="button"
                         onClick={stopChromeAiModelPreparation}
-                        className="inline-flex items-center justify-center gap-2 rounded-lg border border-signal-rose/35 bg-signal-rose/10 px-3 py-2 text-sm font-semibold text-signal-rose hover:bg-signal-rose/15"
+                        className="inline-flex min-w-0 items-center justify-center gap-2 rounded-lg border border-signal-rose/35 bg-signal-rose/10 px-3 py-2 text-sm font-semibold text-signal-rose hover:bg-signal-rose/15"
                       >
                         <XCircle className="h-4 w-4" />
-                        Stop download
+                        <span className="truncate">Stop download</span>
                       </button>
                     )}
                   </div>
