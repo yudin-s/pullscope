@@ -1185,31 +1185,21 @@ export function App() {
                   type="button"
                   onClick={() => selectPreset(preset.id)}
                   className={clsx(
-                    "relative rounded-lg border px-3 py-3 text-left text-sm transition",
+                    "relative overflow-hidden rounded-lg border px-3 py-3 text-left text-sm transition",
                     preset.id === providerId && preset.id === "chromeai"
-                      ? "border-signal-lime/70 bg-signal-lime/15 text-white shadow-glow ring-1 ring-signal-lime/50"
+                      ? "border-signal-lime/70 bg-signal-lime/15 text-white shadow-[0_0_30px_rgba(163,230,53,0.26)] ring-1 ring-signal-lime/50"
                       : preset.id === providerId
                         ? "border-signal-cyan bg-signal-cyan/10 text-white"
-                        : "border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/10",
+                        : preset.id === "chromeai"
+                          ? "border-signal-lime/25 bg-signal-lime/[0.06] text-slate-200 shadow-[inset_0_0_26px_rgba(163,230,53,0.08)] hover:bg-signal-lime/10"
+                          : "border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/10",
                   )}
                 >
                   {preset.id === "chromeai" && (
-                    <span
-                      className={clsx(
-                        "absolute right-3 top-3 inline-flex h-5 w-9 items-center rounded-full transition",
-                        preset.id === providerId ? "bg-signal-lime/80" : "bg-slate-700",
-                      )}
-                    >
-                      <span
-                        className={clsx(
-                          "h-4 w-4 rounded-full bg-white shadow transition",
-                          preset.id === providerId ? "translate-x-4" : "translate-x-0.5",
-                        )}
-                      />
-                    </span>
+                    <span className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_25%_15%,rgba(163,230,53,0.24),transparent_48%)]" />
                   )}
-                  <span className="block pr-12 font-semibold">{preset.name}</span>
-                  <span className="mt-1 block text-xs text-slate-500">
+                  <span className="relative z-10 block font-semibold">{preset.name}</span>
+                  <span className="relative z-10 mt-1 block text-xs text-slate-500">
                     {preset.runtime === "browser"
                       ? "Browser local"
                       : `${preset.supportsResponses ? "Responses" : "Chat"} ready`}
