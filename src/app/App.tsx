@@ -577,6 +577,7 @@ export function App() {
   const [aiReview, setAiReview] = useState<AiReviewResult | null>(null);
 
   const risk = useMemo(() => (prData ? runRiskEngine(prData) : null), [prData]);
+  const heroPreviewRisk = useMemo(() => runRiskEngine(demoPullRequestData), []);
   const codexBrief = useMemo(
     () => (prData && risk ? buildCodexBrief(prData, risk) : ""),
     [prData, risk],
@@ -1522,47 +1523,29 @@ export function App() {
               <p className="text-sm text-slate-400">Live preview</p>
               <h2 className="mt-1 text-2xl font-semibold text-white">Risk command center</h2>
             </div>
-            {risk ? (
-              <span className={clsx("rounded-full border px-3 py-1 text-sm uppercase", levelTone(risk.level))}>
-                {risk.level}
-              </span>
-            ) : (
-              <SkeletonLine className="h-8 w-20" />
-            )}
+            <span className={clsx("rounded-full border px-3 py-1 text-sm uppercase", levelTone(heroPreviewRisk.level))}>
+              {heroPreviewRisk.level}
+            </span>
           </div>
-          {risk ? (
-            <>
-              <div className="mt-6 grid gap-4 sm:grid-cols-[180px_1fr]">
-                <ScoreRing score={risk.overallScore} level={risk.level} />
-                <div className="space-y-3">
-                  {risk.reasons
-                    .filter((reason) => !reason.label.toLowerCase().startsWith("no "))
-                    .slice(0, 4)
-                    .map((reason) => (
-                      <div key={reason.id} className="rounded-lg bg-white/[0.04] p-3 text-sm text-slate-300">
-                        {reason.label}
-                      </div>
-                    ))}
-                </div>
-              </div>
-              <FileHeatmap risk={risk} />
-            </>
-          ) : (
-            <div className="mt-6 grid gap-4 sm:grid-cols-[180px_1fr]">
-              <div className="flex items-center justify-center">
-                <div className="flex h-36 w-36 animate-pulse items-center justify-center rounded-full border border-white/10 bg-white/[0.04]">
-                  <div className="h-20 w-20 rounded-full bg-ink-950" />
-                </div>
-              </div>
-              <div className="space-y-3">
-                {[0, 1, 2, 3].map((item) => (
-                  <div key={item} className="rounded-lg bg-white/[0.04] p-3">
-                    <SkeletonLine className="h-4 w-full" />
+          <div className="mt-6 grid gap-4 sm:grid-cols-[180px_1fr]">
+            <ScoreRing score={heroPreviewRisk.overallScore} level={heroPreviewRisk.level} />
+            <div className="space-y-3">
+              {heroPreviewRisk.reasons
+                .filter((reason) => !reason.label.toLowerCase().startsWith("no "))
+                .slice(0, 4)
+                .map((reason) => (
+                  <div key={reason.id} className="rounded-lg bg-white/[0.04] p-3 text-sm text-slate-300">
+                    {reason.label}
                   </div>
                 ))}
+              {heroPreviewRisk.reasons.filter((reason) => !reason.label.toLowerCase().startsWith("no ")).length === 0 && (
+                <div className="rounded-lg bg-white/[0.04] p-3 text-sm text-slate-300">
+                  Local review is ready.
+                </div>
+              )}
               </div>
-            </div>
-          )}
+          </div>
+          <FileHeatmap risk={heroPreviewRisk} />
         </motion.div>
       </section>
 
@@ -1665,7 +1648,7 @@ export function App() {
                 <button
                   type="submit"
                   disabled={loadState === "loading"}
-                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-signal-cyan px-4 py-3 font-semibold text-ink-950 disabled:opacity-60"
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-signal-cyan px-4 py-3 font-semibold text-ink-950 shadow-[0_0_26px_rgba(34,211,238,0.24)] transition hover:bg-cyan-300 hover:shadow-[0_0_34px_rgba(34,211,238,0.34)] disabled:opacity-60"
                 >
                   {loadState === "loading" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Github className="h-4 w-4" />}
                   Check PR
