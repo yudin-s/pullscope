@@ -1868,7 +1868,7 @@ function FileHeatmap({ risk }: { risk: RiskAssessment }) {
 }
 
 function SkeletonLine({ className }: { className?: string }) {
-  return <div className={clsx("animate-pulse rounded-full bg-white/10", className)} />;
+  return <div className={clsx("rounded-full bg-white/10", className)} />;
 }
 
 function DashboardSkeleton() {
@@ -1892,7 +1892,7 @@ function DashboardSkeleton() {
       </div>
       <div className="mt-6 grid gap-4 lg:grid-cols-[220px_1fr]">
         <div className="flex items-center justify-center">
-          <div className="flex h-44 w-44 animate-pulse items-center justify-center rounded-full border border-white/10 bg-white/[0.04]">
+          <div className="flex h-44 w-44 items-center justify-center rounded-full border border-white/10 bg-white/[0.04]">
             <div className="h-24 w-24 rounded-full bg-ink-950" />
           </div>
         </div>
