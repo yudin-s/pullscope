@@ -11,6 +11,15 @@ interface ChromeDownloadProgress {
   total?: number;
 }
 
+interface ChromeDownloadProgressSummary {
+  loadedBytes?: number;
+  totalBytes?: number;
+  remainingBytes?: number;
+  percent?: number;
+  etaSeconds?: number;
+  indeterminate?: boolean;
+}
+
 interface ChromeLanguageModelSession {
   prompt(input: string, options?: { signal?: AbortSignal }): Promise<string>;
   destroy?: () => void;
@@ -32,6 +41,7 @@ export interface ChromeAiDiagnosticRow {
     href: string;
     description?: string;
   }>;
+  progress?: ChromeDownloadProgressSummary;
 }
 
 const chromeBuiltInAiLinks = {
@@ -99,22 +109,63 @@ function safeParseJSON<T>(input: string): T | undefined {
   }
 }
 
-function progressDetail(progress?: ChromeDownloadProgress) {
+function formatBytes(value: number) {
+  if (value >= 1024 * 1024 * 1024) return `${(value / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  if (value >= 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  if (value >= 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${value} B`;
+}
+
+function formatDuration(seconds: number) {
+  if (!Number.isFinite(seconds) || seconds < 0) return "unknown";
+  if (seconds < 60) return `${Math.max(1, Math.round(seconds))} sec`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = Math.round(seconds % 60);
+  return rest > 0 ? `${minutes} min ${rest} sec` : `${minutes} min`;
+}
+
+function summarizeProgress(
+  progress: ChromeDownloadProgress | undefined,
+  startedAt: number
+): ChromeDownloadProgressSummary {
   if (
     typeof progress?.loaded === "number" &&
     typeof progress?.total === "number" &&
     progress.total > 0
   ) {
-    return `Chrome is downloading Gemini Nano: ${Math.round((progress.loaded / progress.total) * 100)}%.`;
+    const elapsedSeconds = Math.max(0.001, (Date.now() - startedAt) / 1000);
+    const rate = progress.loaded / elapsedSeconds;
+    const remaining = Math.max(0, progress.total - progress.loaded);
+    return {
+      loadedBytes: progress.loaded,
+      totalBytes: progress.total,
+      remainingBytes: remaining,
+      percent: Math.min(100, Math.max(0, Math.round((progress.loaded / progress.total) * 100))),
+      etaSeconds: rate > 0 ? remaining / rate : undefined,
+    };
   }
-  return "Chrome is preparing or downloading Gemini Nano. Keep this tab open.";
+  return { indeterminate: true };
+}
+
+function progressDetail(summary: ChromeDownloadProgressSummary) {
+  if (
+    typeof summary.loadedBytes === "number" &&
+    typeof summary.totalBytes === "number" &&
+    typeof summary.remainingBytes === "number" &&
+    typeof summary.percent === "number"
+  ) {
+    return `Downloaded ${formatBytes(summary.loadedBytes)} of ${formatBytes(summary.totalBytes)} (${summary.percent}%). ${formatBytes(summary.remainingBytes)} left, about ${formatDuration(summary.etaSeconds ?? Number.NaN)} remaining.`;
+  }
+  return "Chrome is preparing or downloading Gemini Nano. Chrome has not reported file size yet.";
 }
 
 function withDownloadMonitor(
-  onProgress?: (progress: ChromeDownloadProgress) => void
+  onProgress?: (progress: ChromeDownloadProgress) => void,
+  signal?: AbortSignal
 ) {
   return {
     ...languageOptions(),
+    signal,
     monitor(monitor: EventTarget) {
       monitor.addEventListener("downloadprogress", (event) => {
         const progress = event as Event & ChromeDownloadProgress;
@@ -313,8 +364,10 @@ export async function probeChromeBuiltInAI(): Promise<ChromeAiDiagnosticRow[]> {
 }
 
 export async function prepareChromeBuiltInAI(
-  onProgress?: (row: ChromeAiDiagnosticRow) => void
+  onProgress?: (row: ChromeAiDiagnosticRow) => void,
+  signal?: AbortSignal
 ): Promise<ChromeAiDiagnosticRow[]> {
+  const startedAt = Date.now();
   const rows = await probeChromeBuiltInAI();
   const api = languageModelApi();
   const availability = rows.find((row) => row.id === "gemini-nano-availability");
@@ -332,6 +385,7 @@ export async function prepareChromeBuiltInAI(
     label: "Model preparation",
     status: "pending",
     detail: "Starting Chrome's model preparation. This can take a while on the first run.",
+    progress: { indeterminate: true },
     help: [
       "Chrome owns the model download and cache. Keep this tab open and avoid metered connections.",
       "If this remains stuck, restart Chrome and inspect chrome://on-device-internals.",
@@ -342,18 +396,20 @@ export async function prepareChromeBuiltInAI(
   try {
     const session = await api.create(
       withDownloadMonitor((progress) => {
+        const summary = summarizeProgress(progress, startedAt);
         onProgress?.({
           id: "model-download",
           label: "Model preparation",
           status: "pending",
-          detail: progressDetail(progress),
+          detail: progressDetail(summary),
+          progress: summary,
           help: [
             "The first model preparation can be slow because Chrome downloads browser-managed model files.",
             "Subsequent use should not require a network connection once the model is available.",
           ],
           links: [chromeBuiltInAiLinks.internals, chromeBuiltInAiLinks.getStarted],
         });
-      })
+      }, signal)
     );
     const result = await session.prompt("Reply with exactly: ok");
     session.destroy?.();

@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity,
@@ -92,6 +92,14 @@ interface DiagnosticRow {
     href: string;
     description?: string;
   }>;
+  progress?: {
+    loadedBytes?: number;
+    totalBytes?: number;
+    remainingBytes?: number;
+    percent?: number;
+    etaSeconds?: number;
+    indeterminate?: boolean;
+  };
 }
 
 const samplePrUrl = "https://github.com/vercel/next.js/pull/70568";
@@ -290,6 +298,22 @@ function diagnosticKey(row: DiagnosticRow) {
   return row.id ?? `${row.label}-${row.detail}`;
 }
 
+function formatDiagnosticBytes(value?: number) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "unknown";
+  if (value >= 1024 * 1024 * 1024) return `${(value / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  if (value >= 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  if (value >= 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${value} B`;
+}
+
+function formatDiagnosticDuration(seconds?: number) {
+  if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < 0) return "unknown";
+  if (seconds < 60) return `${Math.max(1, Math.round(seconds))} sec`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = Math.round(seconds % 60);
+  return rest > 0 ? `${minutes} min ${rest} sec` : `${minutes} min`;
+}
+
 function DiagnosticItem({
   row,
   expanded,
@@ -319,6 +343,37 @@ function DiagnosticItem({
         <p className={clsx("mt-1 leading-5 text-slate-400", compact ? "text-xs" : "text-sm")}>
           {row.detail}
         </p>
+        {row.progress && (
+          <div className="mt-3">
+            <div className="h-2 overflow-hidden rounded-full bg-white/10">
+              <div
+                className={clsx(
+                  "h-full rounded-full bg-gradient-to-r from-signal-cyan to-signal-lime",
+                  row.progress.indeterminate && "w-1/2 animate-pulse",
+                )}
+                style={
+                  typeof row.progress.percent === "number"
+                    ? { width: `${row.progress.percent}%` }
+                    : undefined
+                }
+              />
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+              {typeof row.progress.percent === "number" ? (
+                <>
+                  <span className="font-semibold text-slate-300">{row.progress.percent}%</span>
+                  <span>
+                    {formatDiagnosticBytes(row.progress.loadedBytes)} / {formatDiagnosticBytes(row.progress.totalBytes)}
+                  </span>
+                  <span>{formatDiagnosticBytes(row.progress.remainingBytes)} left</span>
+                  <span>ETA {formatDiagnosticDuration(row.progress.etaSeconds)}</span>
+                </>
+              ) : (
+                <span>Waiting for Chrome to report download size.</span>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -556,6 +611,7 @@ export function App() {
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [doctorRunning, setDoctorRunning] = useState(false);
   const [chromePreparing, setChromePreparing] = useState(false);
+  const chromePrepareAbortRef = useRef<AbortController | null>(null);
   const [aiRunning, setAiRunning] = useState(false);
   const [aiError, setAiError] = useState("");
   const [aiErrorOpen, setAiErrorOpen] = useState(false);
@@ -889,6 +945,9 @@ export function App() {
   }
 
   async function prepareChromeAiModel() {
+    chromePrepareAbortRef.current?.abort();
+    const controller = new AbortController();
+    chromePrepareAbortRef.current = controller;
     setChromePreparing(true);
     setDiagnosticsOpen(false);
     setExpandedDiagnosticId(null);
@@ -906,19 +965,29 @@ export function App() {
           ...current.filter((item) => diagnosticKey(item) !== diagnosticKey(row)),
           row,
         ]);
-      });
-      setDiagnostics(rows);
+      }, controller.signal);
+      if (!controller.signal.aborted) {
+        setDiagnostics(rows);
+      }
     } catch (err) {
+      const aborted = controller.signal.aborted;
       setDiagnostics([
         {
           id: "model-download",
           label: "Model preparation",
-          status: "fail",
-          detail: String((err as Error)?.message ?? err),
-          help: [
-            "Restart Chrome after enabling flags.",
-            "Open chrome://on-device-internals and check the Model Status tab.",
-          ],
+          status: aborted ? "warn" : "fail",
+          detail: aborted
+            ? "Model preparation was interrupted in PullScope. Chrome may continue a browser-managed background download."
+            : String((err as Error)?.message ?? err),
+          help: aborted
+            ? [
+                "Run Prepare model again when you want to resume checking model readiness.",
+                "If Chrome continued downloading in the background, Chrome AI Doctor may show available later.",
+              ]
+            : [
+                "Restart Chrome after enabling flags.",
+                "Open chrome://on-device-internals and check the Model Status tab.",
+              ],
           links: [
             {
               label: "Open on-device internals",
@@ -929,8 +998,36 @@ export function App() {
         },
       ]);
     } finally {
+      if (chromePrepareAbortRef.current === controller) {
+        chromePrepareAbortRef.current = null;
+      }
       setChromePreparing(false);
     }
+  }
+
+  function stopChromeAiModelPreparation() {
+    chromePrepareAbortRef.current?.abort();
+    setChromePreparing(false);
+    setDiagnostics((current) => [
+      ...current.filter((item) => item.id !== "model-download"),
+      {
+        id: "model-download",
+        label: "Model preparation",
+        status: "warn",
+        detail: "Model preparation was interrupted. Chrome may continue its own background model cache if it already started.",
+        help: [
+          "Use Chrome AI Doctor to check current availability.",
+          "Open chrome://on-device-internals to inspect whether Chrome is still downloading or has cached the model.",
+        ],
+        links: [
+          {
+            label: "Open on-device internals",
+            href: "chrome://on-device-internals",
+            description: "Copy and paste this internal Chrome URL into the address bar.",
+          },
+        ],
+      },
+    ]);
   }
 
   async function refreshModelList() {
@@ -1139,15 +1236,27 @@ export function App() {
                     {doctorRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Network className="h-4 w-4" />}
                     Chrome AI Doctor
                   </button>
-                  <button
-                    type="button"
-                    onClick={prepareChromeAiModel}
-                    disabled={chromePreparing}
-                    className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-sm font-semibold text-white hover:bg-white/10 disabled:opacity-60"
-                  >
-                    {chromePreparing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                    Prepare model
-                  </button>
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={prepareChromeAiModel}
+                      disabled={chromePreparing}
+                      className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-sm font-semibold text-white hover:bg-white/10 disabled:opacity-60"
+                    >
+                      {chromePreparing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                      Prepare model
+                    </button>
+                    {chromePreparing && (
+                      <button
+                        type="button"
+                        onClick={stopChromeAiModelPreparation}
+                        className="inline-flex items-center justify-center gap-2 rounded-lg border border-signal-rose/35 bg-signal-rose/10 px-3 py-2 text-sm font-semibold text-signal-rose hover:bg-signal-rose/15"
+                      >
+                        <XCircle className="h-4 w-4" />
+                        Stop download
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div className="mt-4 space-y-2">
                   {diagnostics.length === 0 ? (

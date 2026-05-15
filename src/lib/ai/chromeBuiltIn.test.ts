@@ -57,6 +57,78 @@ describe("Chrome built-in AI provider", () => {
     expect(preparationRow?.status).toBe("pass");
   });
 
+  it("passes Chrome downloadprogress into diagnostic progress detail with bytes and percent", async () => {
+    const progressRows: Array<{
+      status: string;
+      detail: string;
+      progress?: { percent?: number; loadedBytes?: number; totalBytes?: number; remainingBytes?: number };
+    }> = [];
+    const create = vi.fn(async (options: { monitor?: (monitor: EventTarget) => void }) => {
+      const monitor = new EventTarget();
+      options?.monitor?.(monitor);
+      monitor.dispatchEvent(
+        Object.assign(new Event("downloadprogress"), {
+          loaded: 50,
+          total: 100,
+        })
+      );
+      return { prompt: vi.fn(async () => "ok") };
+    });
+    vi.stubGlobal("window", {});
+    vi.stubGlobal("navigator", { userActivation: { hasBeenActive: true }, gpu: {} });
+    vi.stubGlobal("LanguageModel", {
+      availability: vi.fn(async () => "downloadable"),
+      create,
+    });
+
+    const progress = vi.fn((row) => {
+      progressRows.push(row);
+    });
+
+    await prepareChromeBuiltInAI(progress);
+
+    const progressRow = progressRows.find((row) => row.status === "pending" && row.progress && row.progress.percent === 50);
+
+    expect(progressRow).toBeDefined();
+    expect(progressRow?.progress).toMatchObject({
+      percent: 50,
+      loadedBytes: 50,
+      totalBytes: 100,
+      remainingBytes: 50,
+    });
+    expect(progressRow?.detail).toContain("50%");
+    expect(progressRow?.detail).toContain("Downloaded 50 B of 100 B");
+  });
+
+  it("passes AbortSignal into LanguageModel.create options during preparation", async () => {
+    const controller = new AbortController();
+    let createOptions: { signal?: AbortSignal } | undefined;
+    const prompt = vi.fn(async () => "ok");
+    const create = vi.fn(async (options: { signal?: AbortSignal }) => {
+      createOptions = options;
+      return { prompt };
+    });
+    vi.stubGlobal("window", {});
+    vi.stubGlobal("navigator", { userActivation: { hasBeenActive: true }, gpu: {} });
+    vi.stubGlobal("LanguageModel", {
+      availability: vi.fn(async () => "downloadable"),
+      create,
+    });
+
+    await prepareChromeBuiltInAI(vi.fn(), controller.signal);
+
+    expect(create).toHaveBeenCalled();
+    expect(createOptions?.signal).toBe(controller.signal);
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        signal: controller.signal,
+        monitor: expect.any(Function),
+        expectedInputs: [{ type: "text", languages: ["en"] }],
+      })
+    );
+    expect(prompt).toHaveBeenCalled();
+  });
+
   it("does not hide model downloads behind review calls", async () => {
     vi.stubGlobal("LanguageModel", {
       availability: vi.fn(async () => "downloadable"),
