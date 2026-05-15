@@ -1492,6 +1492,7 @@ export function App() {
             </a>
             <a
               href="#provider"
+              onClick={() => setAiPowerEnabled(true)}
               className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/15 px-5 py-3 font-semibold text-white hover:bg-white/10"
             >
               Connect model endpoint
