@@ -541,7 +541,7 @@ function DesignSelect<T extends string>({
 export function App() {
   const presets = getProviderPresets();
   const [prUrl, setPrUrl] = useState(samplePrUrl);
-  const [prData, setPrData] = useState<PullRequestData>(demoPullRequestData);
+  const [prData, setPrData] = useState<PullRequestData | null>(null);
   const [loadState, setLoadState] = useState<LoadState>("idle");
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
@@ -576,8 +576,11 @@ export function App() {
   const [aiErrorOpen, setAiErrorOpen] = useState(false);
   const [aiReview, setAiReview] = useState<AiReviewResult | null>(null);
 
-  const risk = useMemo(() => runRiskEngine(prData), [prData]);
-  const codexBrief = useMemo(() => buildCodexBrief(prData, risk), [prData, risk]);
+  const risk = useMemo(() => (prData ? runRiskEngine(prData) : null), [prData]);
+  const codexBrief = useMemo(
+    () => (prData && risk ? buildCodexBrief(prData, risk) : ""),
+    [prData, risk],
+  );
   const isChromeAiProvider = selectedPreset.runtime === "browser";
   const modelOptions = useMemo(() => {
     const options = [
@@ -1036,6 +1039,7 @@ export function App() {
   }
 
   async function runAiReview() {
+    if (!prData || !risk) return;
     setAiRunning(true);
     setAiError("");
     setAiErrorOpen(false);
@@ -1413,7 +1417,7 @@ export function App() {
               <button
                 type="button"
                 onClick={runAiReview}
-                disabled={aiRunning}
+                disabled={aiRunning || !prData || !risk}
                 className="inline-flex items-center justify-center gap-2 rounded-lg border border-signal-cyan/60 bg-signal-cyan px-4 py-3 font-semibold text-ink-950 shadow-[0_0_28px_rgba(34,211,238,0.28)] hover:bg-cyan-300 disabled:opacity-60"
               >
                 {aiRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
@@ -1518,24 +1522,47 @@ export function App() {
               <p className="text-sm text-slate-400">Live preview</p>
               <h2 className="mt-1 text-2xl font-semibold text-white">Risk command center</h2>
             </div>
-            <span className={clsx("rounded-full border px-3 py-1 text-sm uppercase", levelTone(risk.level))}>
-              {risk.level}
-            </span>
+            {risk ? (
+              <span className={clsx("rounded-full border px-3 py-1 text-sm uppercase", levelTone(risk.level))}>
+                {risk.level}
+              </span>
+            ) : (
+              <SkeletonLine className="h-8 w-20" />
+            )}
           </div>
-          <div className="mt-6 grid gap-4 sm:grid-cols-[180px_1fr]">
-            <ScoreRing score={risk.overallScore} level={risk.level} />
-            <div className="space-y-3">
-              {risk.reasons
-                .filter((reason) => !reason.label.toLowerCase().startsWith("no "))
-                .slice(0, 4)
-                .map((reason) => (
-                  <div key={reason.id} className="rounded-lg bg-white/[0.04] p-3 text-sm text-slate-300">
-                    {reason.label}
+          {risk ? (
+            <>
+              <div className="mt-6 grid gap-4 sm:grid-cols-[180px_1fr]">
+                <ScoreRing score={risk.overallScore} level={risk.level} />
+                <div className="space-y-3">
+                  {risk.reasons
+                    .filter((reason) => !reason.label.toLowerCase().startsWith("no "))
+                    .slice(0, 4)
+                    .map((reason) => (
+                      <div key={reason.id} className="rounded-lg bg-white/[0.04] p-3 text-sm text-slate-300">
+                        {reason.label}
+                      </div>
+                    ))}
+                </div>
+              </div>
+              <FileHeatmap risk={risk} />
+            </>
+          ) : (
+            <div className="mt-6 grid gap-4 sm:grid-cols-[180px_1fr]">
+              <div className="flex items-center justify-center">
+                <div className="flex h-36 w-36 animate-pulse items-center justify-center rounded-full border border-white/10 bg-white/[0.04]">
+                  <div className="h-20 w-20 rounded-full bg-ink-950" />
+                </div>
+              </div>
+              <div className="space-y-3">
+                {[0, 1, 2, 3].map((item) => (
+                  <div key={item} className="rounded-lg bg-white/[0.04] p-3">
+                    <SkeletonLine className="h-4 w-full" />
                   </div>
                 ))}
+              </div>
             </div>
-          </div>
-          <FileHeatmap risk={risk} />
+          )}
         </motion.div>
       </section>
 
@@ -1680,14 +1707,18 @@ export function App() {
             {providerWizard}
           </div>
 
-          <Dashboard
-            pr={prData}
-            risk={risk}
-            aiReview={aiReview}
-            aiError={aiError}
-            onOpenAiError={() => setAiErrorOpen(true)}
-            onLocalReviewHoverChange={setLocalReviewHover}
-          />
+          {prData && risk ? (
+            <Dashboard
+              pr={prData}
+              risk={risk}
+              aiReview={aiReview}
+              aiError={aiError}
+              onOpenAiError={() => setAiErrorOpen(true)}
+              onLocalReviewHoverChange={setLocalReviewHover}
+            />
+          ) : (
+            <DashboardSkeleton />
+          )}
         </div>
       </section>
 
@@ -1701,15 +1732,20 @@ export function App() {
             <button
               type="button"
               onClick={copyBrief}
+              disabled={!codexBrief}
               className="inline-flex items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-sm font-semibold text-white hover:bg-white/10"
             >
               <Clipboard className="h-4 w-4" />
               {copied ? "Copied" : "Copy Codex brief"}
             </button>
           </div>
-          <pre className="mt-5 max-h-[520px] overflow-auto rounded-lg bg-ink-950 p-4 text-xs leading-6 text-slate-300">
-            {codexBrief}
-          </pre>
+          {codexBrief ? (
+            <pre className="mt-5 max-h-[520px] overflow-auto rounded-lg bg-ink-950 p-4 text-xs leading-6 text-slate-300">
+              {codexBrief}
+            </pre>
+          ) : (
+            <BriefSkeleton />
+          )}
           {copyError && (
             <p className="mt-3 rounded-lg border border-signal-rose/30 bg-signal-rose/10 p-3 text-sm text-rose-100">
               Clipboard copy failed: {copyError}
@@ -1842,6 +1878,76 @@ function FileHeatmap({ risk }: { risk: RiskAssessment }) {
             </div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function SkeletonLine({ className }: { className?: string }) {
+  return <div className={clsx("animate-pulse rounded-full bg-white/10", className)} />;
+}
+
+function DashboardSkeleton() {
+  return (
+    <div className="rounded-lg border border-white/10 bg-ink-900/85 p-5">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0 flex-1">
+          <SkeletonLine className="h-4 w-40" />
+          <SkeletonLine className="mt-4 h-8 w-full max-w-xl" />
+          <SkeletonLine className="mt-3 h-4 w-72 max-w-full" />
+        </div>
+        <SkeletonLine className="h-8 w-24" />
+      </div>
+      <div className="mt-6 grid gap-4 md:grid-cols-4">
+        {["Files", "Additions", "Deletions", "Commits"].map((label) => (
+          <div key={label} className="rounded-lg border border-white/10 bg-white/[0.04] p-4">
+            <p className="text-sm text-slate-500">{label}</p>
+            <SkeletonLine className="mt-3 h-7 w-16" />
+          </div>
+        ))}
+      </div>
+      <div className="mt-6 grid gap-4 lg:grid-cols-[220px_1fr]">
+        <div className="flex items-center justify-center">
+          <div className="flex h-44 w-44 animate-pulse items-center justify-center rounded-full border border-white/10 bg-white/[0.04]">
+            <div className="h-24 w-24 rounded-full bg-ink-950" />
+          </div>
+        </div>
+        <div className="grid gap-3">
+          {[0, 1, 2].map((item) => (
+            <div key={item} className="rounded-lg border border-white/10 bg-white/[0.04] p-3">
+              <SkeletonLine className="h-4 w-56 max-w-full" />
+              <SkeletonLine className="mt-3 h-3 w-32" />
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="mt-6 border-t border-white/10 pt-5">
+        <div className="flex items-center gap-3">
+          <Sparkles className="h-5 w-5 text-signal-cyan" />
+          <h3 className="text-lg font-semibold text-white">Combined review output</h3>
+        </div>
+        <EmptyState
+          icon={<Gauge className="h-5 w-5" />}
+          title="Check a PR to start"
+          body="Paste a GitHub pull request URL or load the demo when you want sample data."
+        />
+      </div>
+    </div>
+  );
+}
+
+function BriefSkeleton() {
+  return (
+    <div className="mt-5 rounded-lg bg-ink-950 p-4">
+      <div className="space-y-3">
+        <SkeletonLine className="h-4 w-56" />
+        <SkeletonLine className="h-4 w-full max-w-2xl" />
+        <SkeletonLine className="h-4 w-72 max-w-full" />
+        <div className="pt-3">
+          <SkeletonLine className="h-4 w-36" />
+          <SkeletonLine className="mt-3 h-4 w-full max-w-xl" />
+          <SkeletonLine className="mt-3 h-4 w-64 max-w-full" />
+        </div>
       </div>
     </div>
   );
