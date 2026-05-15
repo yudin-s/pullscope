@@ -64,6 +64,7 @@ interface AiReviewResult {
   raw: string;
   endpoint?: string;
   parsedOk: boolean;
+  parseError?: string;
 }
 
 interface DiagnosticRow {
@@ -1040,8 +1041,9 @@ export function App() {
         maxPatchCharsPerFile: 420,
         includePersonaNotes: true,
       });
+      const provider = currentProvider();
       const response = await callAiProvider<AiReviewShape>({
-        provider: currentProvider(),
+        provider,
         messages: [
           {
             role: "system",
@@ -1054,6 +1056,15 @@ export function App() {
         timeoutMs: 25000,
         maxTokens: 1200,
       });
+      const rawText = response.text || JSON.stringify(response.raw, null, 2);
+      if (provider.id === "chromeai") {
+        console.info("[PullScope Chrome AI raw response]", {
+          text: response.text,
+          data: response.data,
+          raw: response.raw,
+          endpointUsed: response.endpointUsed,
+        });
+      }
       const parsed = response.data
         ? { success: true, data: response.data, raw: response.text }
         : parseStructuredResponse<AiReviewShape>(response.text);
@@ -1062,11 +1073,17 @@ export function App() {
           ? normalizeParsedAiReviewShape(parsed.data)
           : undefined;
       const parsedOk = Boolean(normalizedData);
+      const parseError = parsedOk
+        ? undefined
+        : parsed.success
+          ? "The model returned JSON, but it did not match PullScope's expected review shape. Showing the raw model response."
+          : `${parsed.error ?? "Could not parse the model response."} Showing the raw model response.`;
       setAiReview({
         parsed: normalizedData,
-        raw: response.text || JSON.stringify(response.raw, null, 2),
+        raw: rawText,
         endpoint: response.endpointUsed,
         parsedOk,
+        parseError,
       });
     } catch (err) {
       setAiError(String((err as Error)?.message ?? err));
@@ -1983,9 +2000,15 @@ function CombinedReviewPanel({
             items={aiReview.parsed?.recommendations ?? aiReview.parsed?.testSuggestions}
           />
           {!aiReview.parsedOk && (
-            <pre className="max-h-72 overflow-auto rounded-lg bg-ink-950 p-4 text-xs leading-6 text-slate-300">
-              {aiReview.raw}
-            </pre>
+            <div className="rounded-lg border border-signal-amber/25 bg-signal-amber/10 p-4">
+              <p className="font-semibold text-white">Model raw response</p>
+              {aiReview.parseError && (
+                <p className="mt-2 text-sm leading-6 text-slate-300">{aiReview.parseError}</p>
+              )}
+              <pre className="mt-3 max-h-72 overflow-auto rounded-lg bg-ink-950 p-4 text-xs leading-6 text-slate-300">
+                {aiReview.raw || "The provider returned an empty response."}
+              </pre>
+            </div>
           )}
         </div>
       )}
