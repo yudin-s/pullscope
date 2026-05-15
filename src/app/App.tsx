@@ -33,6 +33,12 @@ import { prepareChromeBuiltInAI, probeChromeBuiltInAI } from "../lib/ai/chromeBu
 import { callOpenAICompatible } from "../lib/ai/openaiCompatible";
 import { buildRiskPrompt } from "../lib/ai/promptBuilder";
 import {
+  AiReviewShape,
+  normalizeAiReviewShape,
+  toAiTextList,
+  validateAiReviewShape,
+} from "../lib/ai/aiReviewShape";
+import {
   buildProviderHeaders,
   EndpointMode,
   getProviderPreset,
@@ -52,27 +58,6 @@ import {
 } from "../lib/storage/modelProfileStorage";
 
 type LoadState = "idle" | "loading" | "error";
-
-interface AiReviewShape {
-  combinedRiskScore?: number;
-  overallRiskScore?: number;
-  summary?: string;
-  localSignals?: string[];
-  aiFindings?: string[];
-  criticalFindings?: string[];
-  recommendations?: string[];
-  securityConcerns?: string[];
-  reliabilityConcerns?: string[];
-  maintainabilityConcerns?: string[];
-  testSuggestions?: string[];
-  reviewComments?: Array<{
-    file?: string;
-    severity?: string;
-    comment?: string;
-  }>;
-  codexPrompt?: string;
-  mergeRecommendation?: string;
-}
 
 interface AiReviewResult {
   parsed?: AiReviewShape;
@@ -213,49 +198,21 @@ async function copyToClipboard(text: string) {
   }
 }
 
-function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === "string");
-}
-
-function validateAiReviewShape(value: unknown): value is AiReviewShape {
-  if (!value || typeof value !== "object") return false;
-  const review = value as AiReviewShape;
-  const hasSummary = typeof review.summary === "string" && review.summary.trim().length > 0;
-  const hasScore =
-    (typeof review.combinedRiskScore === "number" &&
-      Number.isFinite(review.combinedRiskScore) &&
-      review.combinedRiskScore >= 0 &&
-      review.combinedRiskScore <= 100) ||
-    (typeof review.overallRiskScore === "number" &&
-      Number.isFinite(review.overallRiskScore) &&
-      review.overallRiskScore >= 0 &&
-      review.overallRiskScore <= 100);
-  const hasKnownList =
-    isStringArray(review.localSignals) ||
-    isStringArray(review.aiFindings) ||
-    isStringArray(review.criticalFindings) ||
-    isStringArray(review.recommendations) ||
-    isStringArray(review.securityConcerns) ||
-    isStringArray(review.reliabilityConcerns) ||
-    isStringArray(review.maintainabilityConcerns) ||
-    isStringArray(review.testSuggestions);
-  return hasSummary && (hasScore || hasKnownList);
-}
-
-function normalizeAiReviewShape(review: AiReviewShape): AiReviewShape {
+function normalizeParsedAiReviewShape(review: AiReviewShape): AiReviewShape {
+  const normalized = normalizeAiReviewShape(review);
   const summary = review.summary?.trim();
-  if (!summary?.startsWith("{")) return review;
+  if (!summary?.startsWith("{")) return normalized;
 
   const nested = parseStructuredResponse<AiReviewShape>(summary);
   if (!nested.success || !nested.data || typeof nested.data.summary !== "string") {
-    return review;
+    return normalized;
   }
 
-  return {
+  return normalizeAiReviewShape({
     ...nested.data,
-    ...review,
+    ...normalized,
     summary: nested.data.summary,
-  };
+  });
 }
 
 function extractModelIds(raw: unknown): string[] {
@@ -1102,7 +1059,7 @@ export function App() {
         : parseStructuredResponse<AiReviewShape>(response.text);
       const normalizedData =
         parsed.success && validateAiReviewShape(parsed.data)
-          ? normalizeAiReviewShape(parsed.data)
+          ? normalizeParsedAiReviewShape(parsed.data)
           : undefined;
       const parsedOk = Boolean(normalizedData);
       setAiReview({
@@ -2065,13 +2022,14 @@ function EmptyState({
   );
 }
 
-function ConcernList({ title, items }: { title: string; items?: string[] }) {
-  if (!items || items.length === 0) return null;
+function ConcernList({ title, items }: { title: string; items?: unknown }) {
+  const safeItems = toAiTextList(items);
+  if (safeItems.length === 0) return null;
   return (
     <div className="rounded-lg border border-white/10 bg-white/[0.04] p-4">
       <p className="font-semibold text-white">{title}</p>
       <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-400">
-        {items.slice(0, 5).map((item) => (
+        {safeItems.slice(0, 5).map((item) => (
           <li key={item}>- {item}</li>
         ))}
       </ul>
