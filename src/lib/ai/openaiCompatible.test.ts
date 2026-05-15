@@ -186,7 +186,7 @@ describe("callOpenAICompatible", () => {
 
     const response = await callOpenAICompatible({
       provider: {
-        id: "openrouter",
+        id: "groq",
         apiKey: "test-key",
         endpointMode: "auto",
       },
@@ -195,8 +195,8 @@ describe("callOpenAICompatible", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(String(fetchMock.mock.calls[0][0])).toContain("/api/v1/responses");
-    expect(String(fetchMock.mock.calls[1][0])).toContain("/api/v1/chat/completions");
+    expect(String(fetchMock.mock.calls[0][0])).toContain("/openai/v1/responses");
+    expect(String(fetchMock.mock.calls[1][0])).toContain("/openai/v1/chat/completions");
     expect(response.endpointUsed).toBe("chat_completions");
   });
 
@@ -224,7 +224,7 @@ describe("callOpenAICompatible", () => {
 
     const response = await callOpenAICompatible({
       provider: {
-        id: "openrouter",
+        id: "groq",
         apiKey: "test-key",
         endpointMode: "auto",
       },

@@ -97,7 +97,6 @@ function shouldUseJsonSchema(providerId: ProviderId, forceJsonSchema = false) {
   return (
     forceJsonSchema ||
     providerId === "openai" ||
-    providerId === "openrouter" ||
     providerId === "groq" ||
     providerId === "lmstudio"
   );
@@ -248,6 +247,9 @@ export async function callOpenAICompatible<T = unknown>(
   opts: OpenAICompatibleOptions
 ): Promise<OpenAICompatibleResponse<T>> {
   const preset = getProviderPreset(opts.provider.id);
+  if (preset.runtime !== "http") {
+    throw new Error(`${preset.name} is a browser-native provider and cannot use HTTP endpoints.`);
+  }
   const config = resolveProviderConfig(opts.provider);
   const model = opts.model || config.model;
   const temperature = opts.temperature ?? 0.2;

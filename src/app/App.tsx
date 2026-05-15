@@ -28,6 +28,8 @@ import { demoPullRequestData } from "../lib/demo/demoFixture";
 import { fetchPrData } from "../lib/github/githubClient";
 import { PullRequestData } from "../lib/github/types";
 import { checkEndpointReachability } from "../lib/ai/corsDoctor";
+import { callAiProvider } from "../lib/ai/callAiProvider";
+import { probeChromeBuiltInAI } from "../lib/ai/chromeBuiltIn";
 import { callOpenAICompatible } from "../lib/ai/openaiCompatible";
 import { buildRiskPrompt } from "../lib/ai/promptBuilder";
 import {
@@ -438,6 +440,7 @@ export function App() {
 
   const risk = useMemo(() => runRiskEngine(prData), [prData]);
   const codexBrief = useMemo(() => buildCodexBrief(prData, risk), [prData, risk]);
+  const isChromeAiProvider = selectedPreset.runtime === "browser";
   const modelOptions = useMemo(() => {
     const options = [
       ...fetchedModels,
@@ -479,6 +482,7 @@ export function App() {
     setCustomAuthHeaderValue("");
     setProviderApiKeyInMemory(nextId, undefined);
     setDiagnostics([]);
+    setDiagnosticsOpen(false);
     setAiReview(null);
   }
 
@@ -491,6 +495,7 @@ export function App() {
   }
 
   function isProviderAuthReady() {
+    if (isChromeAiProvider) return true;
     return Boolean(apiKey || hasCustomAuthHeader() || !selectedPreset.auth.needsApiKey);
   }
 
@@ -564,6 +569,11 @@ export function App() {
   }
 
   async function runDoctor() {
+    if (isChromeAiProvider) {
+      await runChromeAiDoctor();
+      return;
+    }
+
     setDoctorRunning(true);
     setDiagnosticsOpen(true);
     setDiagnostics([{ label: "URL syntax", status: "pending", detail: "Checking base URL." }]);
@@ -726,7 +736,39 @@ export function App() {
     setDoctorRunning(false);
   }
 
+  async function runChromeAiDoctor() {
+    setDoctorRunning(true);
+    setDiagnosticsOpen(false);
+    setDiagnostics([
+      {
+        label: "Chrome AI detection",
+        status: "pending",
+        detail: "Checking browser-native LanguageModel support.",
+      },
+    ]);
+    try {
+      const rows = await probeChromeBuiltInAI();
+      setDiagnostics(rows);
+    } catch (err) {
+      setDiagnostics([
+        {
+          label: "Chrome AI detection",
+          status: "fail",
+          detail: String((err as Error)?.message ?? err),
+        },
+      ]);
+    } finally {
+      setDoctorRunning(false);
+    }
+  }
+
   async function refreshModelList() {
+    if (isChromeAiProvider) {
+      setModelLoadState("idle");
+      setModelLoadMessage("Chrome AI models are managed by the browser.");
+      return;
+    }
+
     setModelLoadState("loading");
     setModelLoadMessage("Checking model list endpoint.");
     const authReady = isProviderAuthReady();
@@ -773,7 +815,7 @@ export function App() {
         maxPatchCharsPerFile: 420,
         includePersonaNotes: true,
       });
-      const response = await callOpenAICompatible<AiReviewShape>({
+      const response = await callAiProvider<AiReviewShape>({
         provider: currentProvider(),
         messages: [
           {
@@ -883,160 +925,209 @@ export function App() {
                 >
                   <span className="block font-semibold">{preset.name}</span>
                   <span className="mt-1 block text-xs text-slate-500">
-                    {preset.supportsResponses ? "Responses" : "Chat"} ready
+                    {preset.runtime === "browser"
+                      ? "Browser local"
+                      : `${preset.supportsResponses ? "Responses" : "Chat"} ready`}
                   </span>
                 </button>
               ))}
             </div>
-            <div className="mt-5 space-y-4">
-              <Field label="Base URL">
-                <input
-                  value={baseUrl}
-                  onChange={(event) => setBaseUrl(event.target.value)}
-                  className="field"
-                />
-              </Field>
-              <Field label="Model">
-                <div className="space-y-2">
-                  <DesignSelect
-                    value={model}
-                    onChange={setModel}
-                    ariaLabel="Model"
-                    options={modelOptions.map((item) => ({ value: item, label: item }))}
-                  />
+            {isChromeAiProvider ? (
+              <div className="mt-5 rounded-lg border border-signal-cyan/25 bg-signal-cyan/10 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="font-semibold text-white">Chrome AI runtime</p>
+                    <p className="mt-2 text-sm leading-6 text-slate-300">
+                      Uses Chrome's built-in LanguageModel API directly in the browser. There is no API key,
+                      base URL, auth header, or PullScope server in this path.
+                    </p>
+                  </div>
                   <button
                     type="button"
-                    onClick={refreshModelList}
-                    disabled={modelLoadState === "loading"}
-                    className="inline-flex items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-xs font-semibold text-white hover:bg-white/10 disabled:opacity-60"
+                    onClick={runDoctor}
+                    disabled={doctorRunning}
+                    className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-semibold text-ink-950 disabled:opacity-60"
                   >
-                    {modelLoadState === "loading" ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <RefreshCw className="h-3.5 w-3.5" />
-                    )}
-                    Refresh models
+                    {doctorRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Network className="h-4 w-4" />}
+                    Chrome AI Doctor
                   </button>
-                  {modelLoadMessage && (
-                    <p
-                      className={clsx(
-                        "text-xs leading-5",
-                        modelLoadState === "error" ? "text-signal-amber" : "text-slate-500",
-                      )}
-                    >
-                      {modelLoadMessage}
+                </div>
+                <div className="mt-4 space-y-2">
+                  {diagnostics.length === 0 ? (
+                    <p className="rounded-lg border border-white/10 bg-ink-950/35 p-3 text-sm text-slate-400">
+                      Run the doctor to detect LanguageModel, Gemini Nano availability, user activation, and local runtime hints.
                     </p>
+                  ) : (
+                    diagnostics.map((row) => (
+                      <div key={`${row.label}-${row.detail}`} className="rounded-lg border border-white/10 bg-ink-950/35 p-3">
+                        <div className="flex items-start gap-3">
+                          <StatusIcon status={row.status} />
+                          <div>
+                            <p className="text-sm font-semibold text-white">{row.label}</p>
+                            <p className="mt-1 text-xs leading-5 text-slate-400">{row.detail}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))
                   )}
                 </div>
-              </Field>
-              <Field label="Endpoint mode">
-                <DesignSelect<EndpointMode>
-                  value={endpointMode}
-                  onChange={setEndpointMode}
-                  ariaLabel="Endpoint mode"
-                  options={[
-                    { value: "auto", label: "Auto from preset" },
-                    { value: "responses", label: "Responses API" },
-                    { value: "chat_completions", label: "Chat Completions" },
-                  ]}
-                />
-              </Field>
-              <Field
-                label={
-                  <span className="inline-flex items-center gap-2">
-                    API key
-                    <HelpTooltip label="Model API keys stay in this browser tab's memory. PullScope sends the key directly to the endpoint you configure, never stores it in session/local profile storage, and has no server-side secret store." />
-                  </span>
-                }
-              >
-                <input
-                  type="password"
-                  value={apiKey}
-                  onChange={(event) => {
-                    setApiKey(event.target.value);
-                    setProviderApiKeyInMemory(providerId, event.target.value || undefined);
-                  }}
-                  placeholder={selectedPreset.auth.needsApiKey ? "Memory-only bearer key" : "Optional"}
-                  className="field"
-                />
-                <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.03] p-3">
-                  <button
-                    type="button"
-                    aria-label="Use custom auth header"
-                    aria-pressed={useCustomAuthHeader}
-                    onClick={() => setUseCustomAuthHeader((value) => !value)}
-                    className={clsx(
-                      "flex w-full items-center justify-between gap-3 text-left text-sm font-semibold transition",
-                      useCustomAuthHeader ? "text-white" : "text-slate-300"
+                {selectedPreset.note && (
+                  <p className="mt-3 text-xs leading-5 text-slate-400">{selectedPreset.note}</p>
+                )}
+              </div>
+            ) : (
+              <div className="mt-5 space-y-4">
+                <Field label="Base URL">
+                  <input
+                    value={baseUrl}
+                    onChange={(event) => setBaseUrl(event.target.value)}
+                    className="field"
+                  />
+                </Field>
+                <Field label="Model">
+                  <div className="space-y-2">
+                    <DesignSelect
+                      value={model}
+                      onChange={setModel}
+                      ariaLabel="Model"
+                      options={modelOptions.map((item) => ({ value: item, label: item }))}
+                    />
+                    <button
+                      type="button"
+                      onClick={refreshModelList}
+                      disabled={modelLoadState === "loading"}
+                      className="inline-flex items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-xs font-semibold text-white hover:bg-white/10 disabled:opacity-60"
+                    >
+                      {modelLoadState === "loading" ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-3.5 w-3.5" />
+                      )}
+                      Refresh models
+                    </button>
+                    {modelLoadMessage && (
+                      <p
+                        className={clsx(
+                          "text-xs leading-5",
+                          modelLoadState === "error" ? "text-signal-amber" : "text-slate-500",
+                        )}
+                      >
+                        {modelLoadMessage}
+                      </p>
                     )}
-                  >
+                  </div>
+                </Field>
+                <Field label="Endpoint mode">
+                  <DesignSelect<EndpointMode>
+                    value={endpointMode}
+                    onChange={setEndpointMode}
+                    ariaLabel="Endpoint mode"
+                    options={[
+                      { value: "auto", label: "Auto from preset" },
+                      { value: "responses", label: "Responses API" },
+                      { value: "chat_completions", label: "Chat Completions" },
+                    ]}
+                  />
+                </Field>
+                <Field
+                  label={
                     <span className="inline-flex items-center gap-2">
-                      Use custom auth header
-                      <HelpTooltip label="Custom auth header name and value stay only in this browser tab's memory. When enabled and filled, PullScope sends this exact header instead of the default Authorization: Bearer header." />
+                      API key
+                      <HelpTooltip label="Model API keys stay in this browser tab's memory. PullScope sends the key directly to the endpoint you configure, never stores it in session/local profile storage, and has no server-side secret store." />
                     </span>
-                    <span
+                  }
+                >
+                  <input
+                    type="password"
+                    value={apiKey}
+                    onChange={(event) => {
+                      setApiKey(event.target.value);
+                      setProviderApiKeyInMemory(providerId, event.target.value || undefined);
+                    }}
+                    placeholder={selectedPreset.auth.needsApiKey ? "Memory-only bearer key" : "Optional"}
+                    className="field"
+                  />
+                  <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.03] p-3">
+                    <button
+                      type="button"
+                      aria-label="Use custom auth header"
+                      aria-pressed={useCustomAuthHeader}
+                      onClick={() => setUseCustomAuthHeader((value) => !value)}
                       className={clsx(
-                        "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition",
-                        useCustomAuthHeader ? "bg-signal-cyan/80" : "bg-slate-700"
+                        "flex w-full items-center justify-between gap-3 text-left text-sm font-semibold transition",
+                        useCustomAuthHeader ? "text-white" : "text-slate-300"
                       )}
                     >
+                      <span className="inline-flex items-center gap-2">
+                        Use custom auth header
+                        <HelpTooltip label="Custom auth header name and value stay only in this browser tab's memory. When enabled and filled, PullScope sends this exact header instead of the default Authorization: Bearer header." />
+                      </span>
                       <span
                         className={clsx(
-                          "h-5 w-5 rounded-full bg-white shadow transition",
-                          useCustomAuthHeader ? "translate-x-5" : "translate-x-0.5"
+                          "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition",
+                          useCustomAuthHeader ? "bg-signal-cyan/80" : "bg-slate-700"
                         )}
-                      />
-                    </span>
-                  </button>
-                  {useCustomAuthHeader && (
-                    <div className="mt-3 grid gap-3 sm:grid-cols-[0.8fr_1.2fr]">
-                      <input
-                        value={customAuthHeaderName}
-                        onChange={(event) => setCustomAuthHeaderName(event.target.value)}
-                        placeholder="Header name"
-                        className="field"
-                      />
-                      <input
-                        type="password"
-                        value={customAuthHeaderValue}
-                        onChange={(event) => setCustomAuthHeaderValue(event.target.value)}
-                        placeholder="Header value, e.g. Bearer nvapi-..."
-                        className="field"
-                      />
-                    </div>
-                  )}
-                </div>
-              </Field>
-              <Field label="Profile storage">
-                <DesignSelect<StorageScope>
-                  value={profileStorage}
-                  onChange={setProfileStorage}
-                  ariaLabel="Profile storage"
-                  options={[
-                    { value: "memory", label: "Memory only" },
-                    { value: "session", label: "Session profile" },
-                    { value: "local", label: "Local profile" },
-                  ]}
-                />
-              </Field>
-            </div>
-            {saveProfile && (
+                      >
+                        <span
+                          className={clsx(
+                            "h-5 w-5 rounded-full bg-white shadow transition",
+                            useCustomAuthHeader ? "translate-x-5" : "translate-x-0.5"
+                          )}
+                        />
+                      </span>
+                    </button>
+                    {useCustomAuthHeader && (
+                      <div className="mt-3 grid gap-3 sm:grid-cols-[0.8fr_1.2fr]">
+                        <input
+                          value={customAuthHeaderName}
+                          onChange={(event) => setCustomAuthHeaderName(event.target.value)}
+                          placeholder="Header name"
+                          className="field"
+                        />
+                        <input
+                          type="password"
+                          value={customAuthHeaderValue}
+                          onChange={(event) => setCustomAuthHeaderValue(event.target.value)}
+                          placeholder="Header value, e.g. Bearer nvapi-..."
+                          className="field"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </Field>
+                <Field label="Profile storage">
+                  <DesignSelect<StorageScope>
+                    value={profileStorage}
+                    onChange={setProfileStorage}
+                    ariaLabel="Profile storage"
+                    options={[
+                      { value: "memory", label: "Memory only" },
+                      { value: "session", label: "Session profile" },
+                      { value: "local", label: "Local profile" },
+                    ]}
+                  />
+                </Field>
+              </div>
+            )}
+            {saveProfile && !isChromeAiProvider && (
               <p className="mt-3 rounded-lg border border-signal-amber/30 bg-signal-amber/10 p-3 text-sm leading-6 text-amber-100">
                 Profile saving stores provider, model, base URL, and endpoint mode in{" "}
                 {profileStorage === "session" ? "sessionStorage" : "localStorage"}. API keys
                 and custom auth header values remain memory-only.
               </p>
             )}
-            <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={runDoctor}
-                disabled={doctorRunning}
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-white px-4 py-3 font-semibold text-ink-950 disabled:opacity-60"
-              >
-                {doctorRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Network className="h-4 w-4" />}
-                Run CORS Doctor
-              </button>
+            <div className={clsx("mt-5 grid gap-3", !isChromeAiProvider && "sm:grid-cols-2")}>
+              {!isChromeAiProvider && (
+                <button
+                  type="button"
+                  onClick={runDoctor}
+                  disabled={doctorRunning}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-white px-4 py-3 font-semibold text-ink-950 disabled:opacity-60"
+                >
+                  {doctorRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Network className="h-4 w-4" />}
+                  Run CORS Doctor
+                </button>
+              )}
               <button
                 type="button"
                 onClick={runAiReview}
@@ -1167,8 +1258,8 @@ export function App() {
           {[
             ["Fetch", "Public GitHub REST API"],
             ["Score", "Local deterministic rules"],
-            ["Diagnose", "Browser CORS compatibility"],
-            ["Review", "Optional OpenAI-compatible AI"],
+            ["Diagnose", "Endpoint or Chrome AI compatibility"],
+            ["Review", "Optional model-powered AI"],
           ].map(([title, body], index) => (
             <div key={title} className="flex gap-3">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-ink-800 text-sm text-signal-cyan">
@@ -1372,7 +1463,7 @@ export function App() {
       <AnimatePresence>
         {diagnosticsOpen && (
           <Modal
-            title="CORS Doctor"
+            title="Provider Diagnostics"
             icon={<Activity className="h-5 w-5 text-signal-amber" />}
             onClose={() => setDiagnosticsOpen(false)}
           >
@@ -1396,9 +1487,9 @@ export function App() {
               )}
             </div>
             <div className="mt-5 rounded-lg border border-white/10 bg-white/[0.04] p-4 text-sm leading-6 text-slate-400">
-              If CORS fails, the endpoint may still be valid. A fully client-side app cannot
+              For HTTP providers, if CORS fails, the endpoint may still be valid. A fully client-side app cannot
               bypass browser CORS policy or proxy requests, so use a browser-compatible endpoint,
-              enable CORS on your local server, or choose another provider.
+              enable CORS on your local server, or choose a browser-native provider.
             </div>
           </Modal>
         )}

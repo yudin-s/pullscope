@@ -47,6 +47,8 @@ Memory-only mode is the default and recommended behavior. Use temporary, restric
 
 Because this is a browser-only app, CORS matters. If a provider does not allow requests from the current origin, PullScope cannot bypass that policy without adding a backend or proxy, which is intentionally outside the MVP architecture.
 
+Chrome AI is the browser-native exception: it uses Chrome's built-in LanguageModel API when Gemini Nano is available on the user's desktop browser, so it does not need a base URL, API key, or CORS-compatible endpoint.
+
 ## Private Repository Access
 
 PullScope can analyze private GitHub PRs when the user provides a fine-grained GitHub token with read-only access to the target repository. The token is used only for browser-side GitHub REST calls and is cleared on refresh. A full browser-only OAuth flow would require a registered GitHub OAuth/GitHub App flow and is intentionally separate from the no-backend token path.
@@ -56,10 +58,10 @@ PullScope can analyze private GitHub PRs when the user provides a fine-grained G
 | Provider | Base URL | Default Endpoint |
 | --- | --- | --- |
 | OpenAI | `https://api.openai.com` | `/v1/responses`, fallback `/v1/chat/completions` |
-| OpenRouter | `https://openrouter.ai` | `/api/v1/chat/completions` |
 | Groq | `https://api.groq.com` | `/openai/v1/chat/completions` |
 | Ollama | `http://localhost:11434` | `/v1/chat/completions` |
 | LM Studio | `http://localhost:1234` | `/v1/chat/completions` |
+| Chrome AI | browser-managed | Chrome `LanguageModel` API |
 | Custom | user-defined | Responses or Chat Completions compatible |
 
 Local model notes:

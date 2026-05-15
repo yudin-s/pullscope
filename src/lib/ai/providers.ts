@@ -1,9 +1,9 @@
 export type ProviderId =
   | "openai"
-  | "openrouter"
   | "groq"
   | "ollama"
   | "lmstudio"
+  | "chromeai"
   | "custom";
 
 export interface ProviderAuth {
@@ -22,6 +22,7 @@ export interface ProviderPreset {
   suggestedModels: string[];
   supportsResponses: boolean;
   auth: ProviderAuth;
+  runtime: "http" | "browser";
   note?: string;
 }
 
@@ -53,25 +54,7 @@ const providerPresets: ProviderPreset[] = [
     suggestedModels: ["gpt-5-mini", "gpt-5.2", "gpt-5-nano", "gpt-4.1-mini", "gpt-4.1"],
     supportsResponses: true,
     auth: { needsApiKey: true },
-  },
-  {
-    id: "openrouter",
-    name: "OpenRouter",
-    defaultBaseUrl: "https://openrouter.ai",
-    defaultModel: "openai/gpt-5-mini",
-    chatCompletionsPath: "/api/v1/chat/completions",
-    responsesPath: "/api/v1/responses",
-    modelListPath: "/api/v1/models",
-    suggestedModels: [
-      "openai/gpt-5-mini",
-      "openai/gpt-5.2",
-      "anthropic/claude-sonnet-4.5",
-      "openai/gpt-5.2-codex",
-      "openrouter/auto",
-    ],
-    supportsResponses: true,
-    auth: { needsApiKey: true },
-    note: "Responses API is documented by OpenRouter but still marked beta; Auto mode falls back to Chat Completions if a model rejects it.",
+    runtime: "http",
   },
   {
     id: "groq",
@@ -90,6 +73,7 @@ const providerPresets: ProviderPreset[] = [
     ],
     supportsResponses: true,
     auth: { needsApiKey: true },
+    runtime: "http",
   },
   {
     id: "ollama",
@@ -102,6 +86,7 @@ const providerPresets: ProviderPreset[] = [
     suggestedModels: ["gpt-oss:20b", "llama3.1", "llama3.2", "mistral", "qwen2.5-coder"],
     supportsResponses: true,
     auth: { needsApiKey: false },
+    runtime: "http",
     note: "Responses API requires Ollama v0.13.3 or newer; Auto mode falls back to Chat Completions on unsupported local servers.",
   },
   {
@@ -115,7 +100,22 @@ const providerPresets: ProviderPreset[] = [
     suggestedModels: ["local-model", "openai/gpt-oss-20b"],
     supportsResponses: false,
     auth: { needsApiKey: false },
+    runtime: "http",
     note: "Model ids come from the currently loaded LM Studio model. Auto mode uses Chat Completions because some LM Studio versions return an error body for /v1/responses.",
+  },
+  {
+    id: "chromeai",
+    name: "Chrome AI",
+    defaultBaseUrl: "browser://chrome-ai",
+    defaultModel: "Gemini Nano",
+    chatCompletionsPath: "",
+    responsesPath: "",
+    modelListPath: "",
+    suggestedModels: ["Gemini Nano"],
+    supportsResponses: false,
+    auth: { needsApiKey: false },
+    runtime: "browser",
+    note: "Uses Chrome's built-in LanguageModel API when Gemini Nano is available on this device. No API key, no provider endpoint, and no PullScope backend.",
   },
   {
     id: "custom",
@@ -128,6 +128,7 @@ const providerPresets: ProviderPreset[] = [
     suggestedModels: ["local"],
     supportsResponses: true,
     auth: { needsApiKey: true },
+    runtime: "http",
   },
 ];
 
