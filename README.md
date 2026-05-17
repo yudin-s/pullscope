@@ -1,31 +1,28 @@
 # PullScope
 
-Client-side AI PR review with your own model endpoint.
+Client-side PR review helper with optional model output.
 
 <p>
-  <img alt="Google AI Ready" src="https://img.shields.io/badge/Google%20AI-Ready-34A853?style=for-the-badge&logo=google&logoColor=white">
-  <img alt="Gemini Nano Ready" src="https://img.shields.io/badge/Gemini%20Nano-Ready-8EA7FF?style=for-the-badge&logo=googlegemini&logoColor=white">
-  <img alt="Chrome Built-in AI" src="https://img.shields.io/badge/Chrome%20Built--in%20AI-LanguageModel-1A73E8?style=for-the-badge&logo=googlechrome&logoColor=white">
-  <img alt="Zero Backend" src="https://img.shields.io/badge/Zero%20Backend-GitHub%20Pages-22C55E?style=for-the-badge&logo=githubpages&logoColor=white">
+  <img alt="Chrome LanguageModel" src="https://img.shields.io/badge/Chrome-LanguageModel-1A73E8?style=for-the-badge&logo=googlechrome&logoColor=white">
+  <img alt="Static app" src="https://img.shields.io/badge/Static%20app-GitHub%20Pages-22C55E?style=for-the-badge&logo=githubpages&logoColor=white">
 </p>
 
 [Live demo](https://yudin-s.github.io/pullscope/) · [Source](https://github.com/yudin-s/pullscope)
 
-PullScope is a zero-backend workbench for reviewing public GitHub pull requests. Paste a PR URL, inspect deterministic local risk signals, and optionally combine them with an AI review directly from your browser against an OpenAI-compatible endpoint.
+PullScope is a static workbench for reviewing public GitHub pull requests. Paste a PR URL, inspect local risk signals, and optionally add model output from the browser against an OpenAI-compatible endpoint.
 
-It is designed as a portfolio-grade open-source devtool: useful without login, static-hostable on GitHub Pages, security-aware, and polished enough to show real product engineering.
+The app is useful without a login or backend. It focuses on quick triage: changed files, risk signals, reviewer notes, and a Markdown brief that can be copied into a deeper review workflow.
 
-## Chrome AI / Gemini Nano Ready
+## Chrome LanguageModel Support
 
-PullScope is built to showcase browser-native AI on top of Chrome's built-in `LanguageModel` API and Gemini Nano availability checks.
+PullScope can use Chrome's browser-side `LanguageModel` API when it is available in the user's browser. The local scoring still runs first, so the app remains usable when browser-native model support is missing.
 
-| Browser AI capability | PullScope support |
+| Capability | PullScope support |
 | --- | --- |
-| Google AI / Chrome AI ready UX | Chrome AI is the first provider option and has a dedicated readiness flow. |
-| Gemini Nano readiness | PullScope can check availability, prepare the browser-managed model, and show download progress where Chrome exposes it. |
-| No API key path | Chrome AI runs through the browser runtime with no base URL, auth header, CORS setup, or model API key. |
-| Local-first review | Deterministic risk scoring always runs first, then Gemini Nano can add file-aware AI review context. |
-| Debuggable raw output | Chrome AI raw responses are shown in the UI fallback and logged to the browser console for inspection. |
+| Browser-managed model | Checks availability and shows preparation/download state where Chrome exposes it. |
+| No API key path | Chrome `LanguageModel` runs through the browser runtime without a model API key. |
+| Local-first review | Deterministic risk scoring runs before any optional model output. |
+| Debuggable output | Raw browser model responses are visible in the UI fallback and console. |
 
 > PullScope is not affiliated with Google. Google, Chrome, Gemini, and Gemini Nano names are used only to describe compatibility with browser features exposed by Chrome.
 
@@ -33,21 +30,19 @@ PullScope is built to showcase browser-native AI on top of Chrome's built-in `La
 
 - Parses public GitHub PR URLs like `https://github.com/owner/repo/pull/123`.
 - Fetches PR metadata and changed files from the public GitHub REST API.
-- Scores risk locally without AI.
+- Scores risk locally without a model call.
 - Highlights dependency, lockfile, infrastructure, security, test, large-diff, and many-file signals.
-- Shows reviewer persona notes for security, reliability, maintainability, and DX.
+- Shows reviewer notes for security, reliability, maintainability, and DX.
 - Includes demo data for rate-limit or offline demos.
-- Supports Chrome AI through the browser-native `LanguageModel` API when Gemini Nano is available.
-- Provides BYOK provider setup for OpenAI-compatible model endpoints.
-- Supports model switching through provider suggestions and browser-side `/models` refresh where CORS allows it.
+- Supports Chrome `LanguageModel` where the browser exposes it.
+- Supports OpenAI-compatible model endpoints configured by the user.
 - Lets you choose automatic, Responses API, or Chat Completions endpoint routing.
-- Runs browser-side CORS diagnostics across model-list, Responses, Chat, and minimal completion probes.
-- Combines deterministic local risk with optional AI review output.
-- Generates a Codex-ready Markdown review brief.
+- Runs browser-side CORS diagnostics for configured model endpoints.
+- Generates a Markdown review brief from the current PR metadata and local signals.
 
-## Zero-Backend Architecture
+## Static Architecture
 
-PullScope is a static frontend only.
+PullScope is a frontend-only app.
 
 There is:
 
@@ -67,13 +62,13 @@ PullScope runs entirely in your browser. Your model key is sent directly from yo
 
 Memory-only mode is the default and recommended behavior. Use temporary, restricted, low-limit, read-only tokens. Optional session or local profile saving is an advanced opt-in and stores only provider, model, base URL, and endpoint mode. API keys and GitHub tokens remain memory-only.
 
-Because this is a browser-only app, CORS matters. If a provider does not allow requests from the current origin, PullScope cannot bypass that policy without adding a backend or proxy, which is intentionally outside the MVP architecture.
+Because this is a browser-only app, CORS matters. If a provider does not allow requests from the current origin, PullScope cannot bypass that policy without adding a backend or proxy.
 
-Chrome AI is the browser-native exception: it uses Chrome's built-in LanguageModel API when Gemini Nano is available on the user's desktop browser, so it does not need a base URL, API key, or CORS-compatible endpoint.
+Chrome `LanguageModel` is the browser-native exception: it does not need a base URL, API key, or CORS-compatible endpoint.
 
 ## Private Repository Access
 
-PullScope can analyze private GitHub PRs when the user provides a fine-grained GitHub token with read-only access to the target repository. The token is used only for browser-side GitHub REST calls and is cleared on refresh. A full browser-only OAuth flow would require a registered GitHub OAuth/GitHub App flow and is intentionally separate from the no-backend token path.
+PullScope can analyze private GitHub PRs when the user provides a fine-grained GitHub token with read-only access to the target repository. The token is used only for browser-side GitHub REST calls and is cleared on refresh. A full browser-only OAuth flow would require a registered GitHub OAuth/GitHub App flow and is separate from the no-backend token path.
 
 ## Provider Recipes
 
@@ -83,7 +78,7 @@ PullScope can analyze private GitHub PRs when the user provides a fine-grained G
 | Groq | `https://api.groq.com` | `/openai/v1/chat/completions` |
 | Ollama | `http://localhost:11434` | `/v1/chat/completions` |
 | LM Studio | `http://localhost:1234` | `/v1/chat/completions` |
-| Chrome AI | browser-managed | Chrome `LanguageModel` API |
+| Chrome LanguageModel | browser-managed | Chrome `LanguageModel` API |
 | Custom | user-defined | Responses or Chat Completions compatible |
 
 Local model notes:
@@ -92,17 +87,13 @@ Local model notes:
 - LM Studio may need CORS enabled for browser access.
 - Local HTTP endpoints work best while developing locally. Remote HTTPS deployments may be blocked by mixed-content rules when calling `http://localhost`.
 
-## Codex Brief
-
-The Codex-ready brief is generated from the current PR metadata, deterministic risk score, top file signals, and reviewer persona notes. It is Markdown-only and can be copied into Codex or another code-review assistant without requiring the model review step.
-
 ## Limitations
 
-- Public PRs only.
+- Public PRs only unless the user supplies a read-only GitHub token.
 - GitHub unauthenticated rate limits apply.
 - Patch snippets can be omitted by GitHub for large or binary files.
-- AI review quality depends on the configured provider and model.
-- No OAuth, private repository access, or GitHub comment writeback in the MVP.
+- Model review quality depends on the configured provider and model.
+- No OAuth or GitHub comment writeback in the MVP.
 - No full repository analysis.
 
 ## Development
@@ -127,17 +118,3 @@ In GitHub:
 2. Go to Pages.
 3. Set source to GitHub Actions.
 4. Push to `main`.
-
-## Portfolio Positioning
-
-PullScope demonstrates:
-
-- frontend product engineering
-- API integration without a backend
-- static deployment constraints
-- security-aware BYOK UX
-- AI tooling integration
-- useful deterministic analysis before model calls
-- polished dashboard and developer workflow design
-
-It is intentionally scoped as a practical open-source devtool, not a SaaS.
